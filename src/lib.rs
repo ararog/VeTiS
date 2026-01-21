@@ -6,6 +6,7 @@ use http_body_util::Full;
 
 #[cfg(any(feature = "http1", feature = "http2"))]
 use hyper::body::Incoming;
+use log::info;
 
 use crate::server::{config::ServerConfig, errors::VetisError, Server};
 
@@ -54,7 +55,7 @@ impl Vetis {
     {
         self.start(handler).await?;
 
-        println!(
+        info!(
             "Server listening on port {}:{}",
             self.config.interface(),
             self.config.port()
@@ -62,7 +63,7 @@ impl Vetis {
 
         tokio::signal::ctrl_c().await;
 
-        println!("\nStopping server...");
+        info!("\nStopping server...");
 
         self.stop().await?;
 
