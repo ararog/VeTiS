@@ -5,6 +5,8 @@ use hyper::Response;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std_logger::Config::logfmt().init();
+
     let port = 8080;
     let interface = "::".to_string();
 

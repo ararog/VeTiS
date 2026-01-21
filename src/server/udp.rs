@@ -4,7 +4,8 @@ use rt_gate::{spawn_server, spawn_worker, GateTask};
 
 use crate::server::{errors::VetisError, Server};
 use bytes::Bytes;
-use h3::server::RequestResolver;
+use h3::server::{Connection, RequestResolver};
+use h3_quinn::Connection as QuinnConnection;
 use http::{Request, Response};
 use http_body_util::{BodyExt, Full};
 use hyper::service::Service;
@@ -34,8 +35,8 @@ pub trait UdpServer: Server<Full<Bytes>, Full<Bytes>> {
                 spawn_worker(async move {
                     match new_conn.await {
                         Ok(conn) => {
-                            let mut h3_conn: h3::server::Connection<h3_quinn::Connection, Bytes> =
-                                h3::server::Connection::new(h3_quinn::Connection::new(conn))
+                            let mut h3_conn: Connection<QuinnConnection, Bytes> =
+                                Connection::new(QuinnConnection::new(conn))
                                     .await
                                     .unwrap();
                             let request_handler = ServerHandler::new(handler);
@@ -51,14 +52,14 @@ pub trait UdpServer: Server<Full<Bytes>, Full<Bytes>> {
                                         break;
                                     }
                                     Err(err) => {
-                                        eprintln!("error on accept {}", err);
+                                        error!("Cannot accept connection: {:?}", err);
                                         break;
                                     }
                                 }
                             }
                         }
                         Err(err) => {
-                            eprintln!("accepting connection failed: {:?}", err);
+                            error!("Accepting connection failed: {:?}", err);
                         }
                     }
                 });
@@ -91,7 +92,7 @@ where
 
     pub fn handle(
         &self,
-        resolver: RequestResolver<h3_quinn::Connection, Bytes>,
+        resolver: RequestResolver<QuinnConnection, Bytes>,
     ) -> Result<(), VetisError> {
         let handler = self.handler.clone();
         spawn_worker(async move {
@@ -126,10 +127,10 @@ where
                         .await
                     {
                         Ok(_) => {
-                            println!("successfully respond to connection");
+                            info!("Successfully respond to connection");
                         }
                         Err(err) => {
-                            eprintln!("unable to send response to connection peer: {:?}", err);
+                            error!("Unable to send response to connection peer: {:?}", err);
                         }
                     }
 
@@ -146,7 +147,7 @@ where
                         .send_data(buf)
                         .await;
                 } else {
-                    eprintln!("HttpServer - Error serving connection: {:?}", response.err());
+                    error!("HttpServer - Error serving connection: {:?}", response.err());
                 }
 
                 let _ = stream

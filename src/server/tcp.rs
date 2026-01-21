@@ -11,6 +11,7 @@ use http::{Request, Response};
 use http_body_util::Full;
 use hyper::body::Incoming;
 use rt_gate::{spawn_server, spawn_worker, GateTask};
+use log::error;
 
 use hyper::service::Service;
 
@@ -69,18 +70,28 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
     {
         let task = spawn_server(async move {
             loop {
-                let (stream, _) = listener
+                let result = listener
                     .accept()
-                    .await
-                    .expect("HttpServer - Failed to accept connection");
+                    .await;
+
+                if let Err(err) = result {
+                    error!("Cannot accept connection: {:?}", err);
+                    continue;
+                }
+
+                let (stream, _) = result.unwrap();
 
                 if let Some(acceptor) = &tls_acceptor {
-                    let tls_stream: TlsStream<TcpStream> = acceptor
+                    let tls_stream = acceptor
                         .accept(stream)
-                        .await
-                        .expect("HttpServer - Failed to accept TLS connection");
+                        .await;
 
-                    let io = EasyIo::new(tls_stream);
+                    if let Err(e) = tls_stream {
+                        error!("Cannot accept connection: {:?}", e);
+                        continue;
+                    }
+
+                    let io = EasyIo::new(tls_stream.unwrap());
                     let handler = handler.clone();
                     spawn_worker(async move {
                         #[cfg(feature = "http1")]
@@ -89,7 +100,7 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
                                 .serve_connection(io, handler.clone())
                                 .await;
                             if let Err(err) = result {
-                                eprintln!("HttpServer - Error serving connection: {}", err);
+                                error!("Error serving connection: {:?}", err);
                             }
                         }
                         #[cfg(feature = "http2")]
@@ -98,7 +109,7 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
                                 .serve_connection(io, handler.clone())
                                 .await;
                             if let Err(err) = result {
-                                eprintln!("HttpServer - Error serving connection: {}", err);
+                                error!("Error serving connection: {:?}", err);
                             }
                         }
                     });
@@ -111,14 +122,14 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
                             .serve_connection(io, handler.clone())
                             .await
                         {
-                            eprintln!("HttpServer - Error serving connection: {}", err);
+                            error!("Error serving connection: {:?}", err);
                         }
                         #[cfg(feature = "http2")]
                         if let Err(err) = http2::Builder::new(EasyExecutor::new())
                             .serve_connection(io, handler.clone())
                             .await
                         {
-                            eprintln!("HttpServer - Error serving connection: {}", err);
+                            error!("Error serving connection: {:?}", err);
                         }
                     });
                 }
