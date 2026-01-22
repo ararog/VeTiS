@@ -5,3 +5,19 @@ labels: [
   "feature",
   "enhancement"
 ]
+assignees: 
+  - ararog
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this feature request!
+  - type: textarea
+    id: what-you-need
+    attributes:
+      label: What you need?
+      description: Describe the feature you need
+      placeholder: Tell us what you need!
+      value: "A feature request happened!"
+    validations:
+      required: true
