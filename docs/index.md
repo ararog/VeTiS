@@ -1,10 +1,24 @@
-# VeTiS (Very Tiny Server)
+---
+layout: default
+title: VeTiS - Very Tiny Server
+nav_order: 1
+description: "🚀 A blazingly fast, minimalist HTTP server built for modern Rust applications"
+permalink: /
+---
+<div align="center">
+<h1><b>VeTiS</b></h1>
+</div>
 
-🚀 **A blazingly fast, minimalist HTTP server built for modern Rust applications**
+[![crates.io](https://img.shields.io/crates/v/vetis?style=flat-square)](https://crates.io/crates/vetis)
+[![Build Status](https://github.com/ararog/vetis/actions/workflows/rust.yml/badge.svg?event=push)](https://github.com/ararog/vetis/actions/workflows/rust.yml)
+[![Documentation](https://docs.rs/vetis/badge.svg)](https://docs.rs/vetis/latest/vetis)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-VeTiS is a lightweight yet powerful web server that brings simplicity and performance together. Designed with Rust's safety guarantees in mind, it delivers HTTP/1, HTTP/2, and HTTP/3 support with a clean, intuitive API that makes building web services a breeze.
+**VeTiS** is a lightweight yet powerful web server that brings simplicity and performance together. Designed with Rust's safety guarantees in mind, it delivers HTTP/1, HTTP/2, and HTTP/3 support with a clean, intuitive API that makes building web services a breeze.
 
-## ✨ Why VeTiS?
+Built on top of [hyper](https://github.com/hyperium/hyper).
+
+## Features
 
 - **🎯 Minimalist Design**: Focus on what matters - serving HTTP requests efficiently
 - **🔧 Flexible Runtime**: Choose between Tokio or Smol async runtimes
@@ -21,23 +35,7 @@ Add VeTiS to your `Cargo.toml`:
 vetis = { version = "0.1.0", features = ["tokio-rt", "http2", "tokio-rust-tls"] }
 ```
 
-## Runtimes
-
-- [tokio](https://github.com/tokio-rs/tokio)
-- [smol](https://github.com/smol-rs/smol)
-
-## Crate features
-
-- tokio-rt (default)
-- smol-rt
-- http1
-- http2 (default)
-- http3
-- tokio-rust-tls (default)
-
-## 💡 Usage Example
-
-Here's how simple it is to create a web server with VeTiS:
+Basic usage:
 
 ```rust
 use bytes::Bytes;
@@ -95,31 +93,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## 🗺️ Roadmap
+## Examples
 
-VeTiS is continuously evolving! Here's what we're working on:
+Check out the [examples](./examples.md) for complete examples of how to use Vetis in your projects.
 
-### Core Features
+## Create project from template
 
-- **🌐 Virtual Hosts** - Host multiple domains on a single server
-- **🔌 WebSockets** - Real-time bidirectional communication
-- **🔐 SNI Support** - Server Name Indication for TLS
-- **🔄 Reverse Proxy** - Route requests to backend services
-- **⚖️ Load Balancing** - Distribute traffic across multiple servers
+You can create a new project from the template using `cargo generate`:
 
-### Content & Security
+`cargo generate ararog/vetis-templates`
 
-- **📁 Static File Serving** - Efficient static asset delivery
-- **🎭 Dynamic Content** - Template rendering and content generation
-- **🔑 Authentication** - Multiple auth methods support
-- **🛡️ Authorization** - Fine-grained access control
-- **📊 Logging** - Comprehensive request and error logging
+## Documentation
 
-## 📄 License
+- [API Reference](https://docs.rs/vetis)
+- [Contributing Guide](./CONTRIBUTING.md)
 
-MIT
+## License
 
-## 👤 Author
+This project is licensed under the [MIT License](./LICENSE.md).
+
+## Author
 
 Rogerio Pereira Araujo <rogerio.araujo@gmail.com>
-

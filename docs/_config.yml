@@ -1,0 +1,23 @@
+title: Deboa
+baseurl: "/deboa" # the subpath of your site, e.g. /blog
+url: "https://ararog.github.io" # the base hostname & protocol for your site
+
+theme: jekyll-theme-cayman
+
+markdown: kramdown
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-feed
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+      toc: true
+      toc_sticky: true
+      sidebar:
+        nav: "navigation"
+
