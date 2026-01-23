@@ -1,15 +1,15 @@
-pub mod path;
+pub mod directory;
 
 pub trait VirtualHost {
     fn hostname(&self) -> String;
 
     fn is_secure(&self) -> bool;
 
-    fn set_paths<P>(&mut self, paths: Vec<P>)
+    fn set_directories<D>(&mut self, directories: Vec<D>)
     where
-        P: path::Path;
+        D: directory::Directory;
 
-    fn paths<P>(&self) -> Vec<&P>
+    fn directories<D>(&self) -> Vec<&D>
     where
-        P: path::Path;
+        D: directory::Directory;
 }
