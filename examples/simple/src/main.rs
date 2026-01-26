@@ -7,7 +7,7 @@ use vetis::{
     server::{
         config::{SecurityConfig, ServerConfig, VirtualHostConfig},
         errors::VetisError,
-        virtual_host::{DefaultVirtualHost, VirtualHost},
+        virtual_host::{DefaultVirtualHost, VirtualHost, handler_fn},
     },
 };
 
@@ -76,7 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .interface(interface)
         .build();
 
-
     let localhost_config = VirtualHostConfig::builder()
         .hostname("localhost:8080".to_string())
         .build();
@@ -85,17 +84,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .hostname("server:8080".to_string())
         .build();
 
-    let localhost_virtual_host = DefaultVirtualHost::new(localhost_config, Box::new(|request| Box::pin(async move {
-        Ok(Response::new(Full::new(Bytes::from("Hello from localhost"))))
-    })));
+    let mut localhost_virtual_host = DefaultVirtualHost::new(localhost_config);
 
-    let server_virtual_host = DefaultVirtualHost::new(server_config, Box::new(|request| Box::pin(async move {
+    localhost_virtual_host.set_handler(handler_fn(|request| async move {
+        Ok(Response::new(Full::new(Bytes::from("Hello from localhost"))))
+    }));
+
+    let mut server_virtual_host = DefaultVirtualHost::new(server_config);
+
+    server_virtual_host.set_handler(handler_fn(|request| async move {
         Ok(Response::new(Full::new(Bytes::from("Hello from server"))))
-    })));
+    }));
 
     let mut server = Vetis::new(config);
-    server.add_virtual_host(Box::new(localhost_virtual_host)).await;
-    server.add_virtual_host(Box::new(server_virtual_host)).await;
+    server
+        .add_virtual_host(localhost_virtual_host)
+        .await;
+    server
+        .add_virtual_host(server_virtual_host)
+        .await;
 
     server.run().await?;
 

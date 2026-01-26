@@ -32,8 +32,7 @@ use tokio::sync::RwLock;
 
 pub(crate) type VetisRwLock<T> = RwLock<T>;
 
-pub(crate) type VetisVirtualHosts =
-    Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost + Send + Sync + 'static>>>>;
+pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>;
 
 use crate::server::{config::ServerConfig, errors::VetisError, virtual_host::VirtualHost, Server};
 
@@ -70,10 +69,10 @@ impl Vetis {
         Vetis { config, virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new())), instance: None }
     }
 
-    pub async fn add_virtual_host(
-        &mut self,
-        virtual_host: Box<dyn VirtualHost + Send + Sync + 'static>,
-    ) {
+    pub async fn add_virtual_host<V>(&mut self, virtual_host: V)
+    where
+        V: VirtualHost,
+    {
         self.virtual_hosts
             .write()
             .await
@@ -81,7 +80,7 @@ impl Vetis {
                 virtual_host
                     .hostname()
                     .to_string(),
-                virtual_host,
+                Box::new(virtual_host),
             );
     }
 

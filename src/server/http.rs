@@ -1,7 +1,6 @@
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -26,16 +25,12 @@ use crate::VetisRwLock;
 pub struct HttpServer {
     config: ServerConfig,
     task: Option<GateTask>,
-    virtual_hosts: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost + Send + Sync + 'static>>>>,
+    virtual_hosts: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>,
 }
 
 impl HttpServer {
     pub fn new(config: ServerConfig) -> Self {
-        Self {
-            config,
-            task: None,
-            virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new().into())),
-        }
+        Self { config, task: None, virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new())) }
     }
 }
 
@@ -48,9 +43,7 @@ impl Server<Incoming, Full<Bytes>> for HttpServer {
 
     fn set_virtual_hosts(
         &mut self,
-        virtual_hosts: Arc<
-            VetisRwLock<HashMap<String, Box<dyn VirtualHost + Send + Sync + 'static>>>,
-        >,
+        virtual_hosts: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>,
     ) {
         self.virtual_hosts = virtual_hosts;
     }
