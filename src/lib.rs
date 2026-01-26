@@ -34,8 +34,12 @@ pub(crate) type VetisRwLock<T> = RwLock<T>;
 
 pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>;
 
-use crate::server::{config::ServerConfig, errors::VetisError, virtual_host::VirtualHost, Server};
+use crate::{
+    errors::VetisError,
+    server::{config::ServerConfig, virtual_host::VirtualHost, Server},
+};
 
+pub mod errors;
 mod rt;
 pub mod server;
 mod tests;
@@ -57,11 +61,11 @@ pub struct Vetis {
     virtual_hosts: VetisVirtualHosts,
 
     #[cfg(feature = "http1")]
-    instance: Option<server::http::HttpServer>,
+    instance: Option<server::conn::tcp::http::HttpServer>,
     #[cfg(feature = "http2")]
-    instance: Option<server::http::HttpServer>,
+    instance: Option<server::conn::tcp::http::HttpServer>,
     #[cfg(feature = "http3")]
-    instance: Option<server::quic::HttpServer>,
+    instance: Option<server::conn::udp::http::HttpServer>,
 }
 
 impl Vetis {
@@ -73,15 +77,16 @@ impl Vetis {
     where
         V: VirtualHost,
     {
+        let hostname = if self.config.port() == 80 || self.config.port() == 443 {
+            virtual_host.hostname()
+        } else {
+            format!("{}:{}", virtual_host.hostname(), self.config.port())
+        };
+
         self.virtual_hosts
             .write()
             .await
-            .insert(
-                virtual_host
-                    .hostname()
-                    .to_string(),
-                Box::new(virtual_host),
-            );
+            .insert(hostname, Box::new(virtual_host));
     }
 
     pub fn config(&self) -> &ServerConfig {
@@ -130,10 +135,10 @@ impl Vetis {
         }
 
         #[cfg(any(feature = "http1", feature = "http2"))]
-        let mut server = server::http::HttpServer::new(self.config.clone());
+        let mut server = server::conn::tcp::http::HttpServer::new(self.config.clone());
 
         #[cfg(feature = "http3")]
-        let mut server = server::quic::HttpServer::new(self.config.clone());
+        let mut server = server::conn::udp::http::HttpServer::new(self.config.clone());
 
         server.set_virtual_hosts(
             self.virtual_hosts

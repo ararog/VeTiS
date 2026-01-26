@@ -3,13 +3,15 @@ use std::sync::Arc;
 use log::{error, info};
 use rt_gate::{spawn_server, spawn_worker, GateTask};
 
-use crate::server::{errors::VetisError, Server};
+use crate::{errors::VetisError, server::Server};
+use ::http::{Request, Response};
 use bytes::Bytes;
 use h3::server::{Connection, RequestResolver};
 use h3_quinn::Connection as QuinnConnection;
-use http::{Request, Response};
 use http_body_util::{BodyExt, Full};
 use hyper::service::Service;
+
+pub(crate) mod http;
 
 pub trait UdpServer: Server<Full<Bytes>, Full<Bytes>> {
     fn handle_connections<S>(
@@ -100,7 +102,7 @@ where
             if let Ok((req, mut stream)) = result {
                 let (parts, _) = req.into_parts();
 
-                let request = http::Request::from_parts(parts, Full::new(Bytes::new()));
+                let request = Request::from_parts(parts, Full::new(Bytes::new()));
 
                 let response = handler
                     .call(request)
@@ -110,7 +112,7 @@ where
                 if let Ok(response) = response {
                     let (parts, body) = response.into_parts();
 
-                    let mut resp = http::Response::builder()
+                    let mut resp = Response::builder()
                         .status(parts.status)
                         .version(parts.version)
                         .extension(parts.extensions)

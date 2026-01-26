@@ -1,11 +1,8 @@
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
-    server::{
-        errors::{StartError::Tls, VetisError},
-        virtual_host::VirtualHost,
-    },
-    RequestType, ResponseType, VetisRwLock,
+    errors::{StartError::Tls, VetisError},
+    VetisVirtualHosts,
 };
 
 use rustls::{
@@ -29,20 +26,16 @@ pub struct TlsFactory {}
 
 impl TlsFactory {
     pub async fn create_tls_acceptor(
-        virtual_hosts: Arc<
-            VetisRwLock<HashMap<String, Box<dyn VirtualHost + Send + Sync + 'static>>>,
-        >,
+        virtual_hosts: VetisVirtualHosts,
         alpn_protocols: Vec<u8>,
     ) -> Result<Option<VetisTlsAcceptor>, VetisError> {
         let virtual_hosts = virtual_hosts.clone();
         let provider = rustls::crypto::aws_lc_rs::default_provider();
         let mut resolver = ResolvesServerCertUsingSni::new();
-        while let Some((hostname, virtual_host)) = virtual_hosts
+        let virtual_hosts = virtual_hosts
             .read()
-            .await
-            .iter()
-            .next()
-        {
+            .await;
+        for (hostname, virtual_host) in virtual_hosts.iter() {
             if let Some(security) = virtual_host
                 .config()
                 .security()
@@ -64,9 +57,14 @@ impl TlsFactory {
                 let certified_key = CertifiedKey::from_der(chain, key, &provider)
                     .map_err(|_| Tls("Failed to create certified key".to_string()))?;
 
+                let hostname = hostname
+                    .split_once(":")
+                    .map(|(hostname, _)| hostname)
+                    .unwrap_or(hostname);
+
                 resolver
                     .add(hostname, certified_key)
-                    .map_err(|_| Tls("Failed to add certified key".to_string()))?;
+                    .map_err(|e| Tls(e.to_string()))?;
             }
         }
 

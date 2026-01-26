@@ -1,22 +1,9 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
-use crate::{
-    server::{errors::VetisError, virtual_host::VirtualHost},
-    VetisRwLock,
-};
-
-#[cfg(any(feature = "http1", feature = "http2"))]
-pub mod http;
-#[cfg(feature = "http3")]
-pub mod quic;
-
-#[cfg(any(feature = "http1", feature = "http2"))]
-pub mod tcp;
-#[cfg(feature = "http3")]
-pub mod udp;
+use crate::{errors::VetisError, server::virtual_host::VirtualHost, VetisRwLock};
 
 pub mod config;
-pub mod errors;
+pub mod conn;
 pub mod tls;
 pub mod virtual_host;
 

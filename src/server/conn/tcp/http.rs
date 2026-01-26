@@ -1,35 +1,35 @@
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
-use crate::{server::tls::TlsFactory, VetisRwLock};
-use log::info;
-
-use hyper::service::service_fn;
-
-#[cfg(all(feature = "smol-rt", feature = "http2"))]
-use crate::rt::smol::SmolExecutor;
-#[cfg(all(feature = "tokio-rt", feature = "http2"))]
-use hyper_util::rt::TokioExecutor;
-#[cfg(feature = "smol-rt")]
-use smol::io::{AsyncRead, AsyncWrite};
-#[cfg(feature = "tokio-rt")]
-use tokio::io::{AsyncRead, AsyncWrite};
-
-use crate::{
-    server::errors::VetisError,
-    server::{virtual_host::VirtualHost, Server},
-};
-use bytes::Bytes;
-use http::Response;
 use http_body_util::Full;
-use hyper::body::Incoming;
-use log::error;
+use hyper::{
+    body::{Bytes, Incoming},
+    service::service_fn,
+};
+
+use log::{error, info};
+use peekable::tokio::AsyncPeekable;
+use peekable::Peekable;
 use rt_gate::{spawn_server, spawn_worker, GateTask};
+
+use ::http::Response;
 
 #[cfg(feature = "http1")]
 use hyper::server::conn::http1;
 #[cfg(feature = "http2")]
 use hyper::server::conn::http2;
+
+#[cfg(all(feature = "smol-rt", feature = "http2"))]
+use crate::rt::smol::SmolExecutor;
+use crate::server::tls::TlsFactory;
+#[cfg(all(feature = "tokio-rt", feature = "http2"))]
+use hyper_util::rt::TokioExecutor;
+
+#[cfg(feature = "smol-rt")]
+use smol::io::{AsyncRead, AsyncWrite};
+#[cfg(feature = "tokio-rt")]
+use tokio::io::{AsyncRead, AsyncWrite};
 
 #[cfg(all(feature = "tokio-rt", any(feature = "http1", feature = "http2")))]
 use hyper_util::rt::TokioIo;
@@ -55,15 +55,88 @@ type VetisIo<T> = FuturesIo<T>;
 #[cfg(all(feature = "smol-rt", feature = "http2"))]
 type VetisExecutor = SmolExecutor;
 
-pub trait TcpServer: Server<Incoming, Full<Bytes>> {
-    fn handle_connections(
+use crate::{
+    errors::VetisError,
+    server::{config::ServerConfig, conn::tcp::TcpServer, virtual_host::VirtualHost, Server},
+    VetisRwLock, VetisVirtualHosts,
+};
+
+pub struct HttpServer {
+    config: ServerConfig,
+    task: Option<GateTask>,
+    virtual_hosts: VetisVirtualHosts,
+}
+
+impl HttpServer {
+    pub fn new(config: ServerConfig) -> Self {
+        Self { config, task: None, virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new())) }
+    }
+}
+
+impl Server<Incoming, Full<Bytes>> for HttpServer {
+    fn port(&self) -> u16 {
+        self.config.port()
+    }
+
+    fn set_virtual_hosts(
+        &mut self,
+        virtual_hosts: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>,
+    ) {
+        self.virtual_hosts = virtual_hosts;
+    }
+
+    async fn start(&mut self) -> Result<(), VetisError> {
+        let addr = if let Ok(ip) = self
+            .config
+            .interface()
+            .parse::<Ipv4Addr>()
+        {
+            SocketAddr::from((ip, self.config.port()))
+        } else {
+            let addr = self
+                .config
+                .interface()
+                .parse::<Ipv6Addr>();
+            if let Ok(addr) = addr {
+                SocketAddr::from((addr, self.config.port()))
+            } else {
+                SocketAddr::from(([0, 0, 0, 0], self.config.port()))
+            }
+        };
+
+        let listener = VetisTcpListener::bind(addr)
+            .await
+            .map_err(|e| VetisError::Bind(e.to_string()))?;
+
+        let task = self
+            .handle_connections(
+                listener,
+                self.virtual_hosts
+                    .clone(),
+            )
+            .await?;
+
+        self.task = Some(task);
+
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> Result<(), VetisError> {
+        if let Some(mut task) = self.task.take() {
+            task.cancel().await;
+        }
+        Ok(())
+    }
+}
+
+impl TcpServer for HttpServer {
+    async fn handle_connections(
         &mut self,
         listener: VetisTcpListener,
-        virtual_host: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>,
+        virtual_host: VetisVirtualHosts,
     ) -> Result<GateTask, VetisError> {
-        //let alpn = if cfg!(feature = "http1") { "http/1.1".into() } else { "h2".into() };
-        //let tls_acceptor = TlsFactory::create_tls_acceptor(virtual_host.clone(), alpn).await?;
-        let virtual_hosts = virtual_host.clone();
+        let alpn = if cfg!(feature = "http1") { "http/1.1".into() } else { "h2".into() };
+        let tls_acceptor = TlsFactory::create_tls_acceptor(virtual_host.clone(), alpn).await?;
         let task = spawn_server(async move {
             loop {
                 let result = listener
@@ -81,36 +154,37 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
                     continue;
                 }
 
-                // TODO: Check if connection is secure first, then handle virtual host,
-                //       path and request, note that virtual host and path are not
-                //       implemented yet
+                let mut peekable = AsyncPeekable::from(stream);
 
-                let virtual_hosts = virtual_hosts.clone();
-                /*
-                if let Some(acceptor) = &tls_acceptor {
-                    let tls_stream = acceptor
-                        .accept(stream)
-                        .await;
+                let mut peeked = [0; 16];
+                peekable
+                    .peek_exact(&mut peeked)
+                    .await
+                    .unwrap();
 
-                    if let Err(e) = tls_stream {
-                        error!("Cannot accept connection: {:?}", e);
-                        continue;
+                let is_tls = peeked.starts_with(&[0x16, 0x03]);
+
+                if is_tls {
+                    if let Some(acceptor) = &tls_acceptor {
+                        let tls_stream = acceptor
+                            .accept(peekable)
+                            .await;
+
+                        if let Err(e) = tls_stream {
+                            error!("Cannot accept connection: {:?}", e);
+                            continue;
+                        }
+
+                        let tls_stream = tls_stream.unwrap();
+                        let io = VetisIo::new(tls_stream);
+                        let request_handler = ServerHandler {};
+                        let _ = request_handler.handle(io, virtual_host.clone());
                     }
-
-                    let tls_stream = tls_stream.unwrap();
-                    let io = VetisIo::new(tls_stream);
-                    let request_handler = ServerHandler {};
-                    let _ = request_handler.handle(io, virtual_host);
                 } else {
-                    let io = VetisIo::new(stream);
+                    let io = VetisIo::new(peekable);
                     let request_handler = ServerHandler {};
-                    let _ = request_handler.handle(io, virtual_host);
+                    let _ = request_handler.handle(io, virtual_host.clone());
                 }
-                */
-
-                let io = VetisIo::new(stream);
-                let request_handler = ServerHandler {};
-                let _ = request_handler.handle(io, virtual_hosts);
             }
         });
 
@@ -136,7 +210,7 @@ impl ServerHandler {
             async move {
                 let host = req
                     .headers()
-                    .get(http::header::HOST);
+                    .get(::http::header::HOST);
                 if let Some(host) = host {
                     info!(
                         "Serving request for host: {}",

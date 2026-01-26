@@ -884,6 +884,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
 
 [[package]]
+name = "peekable"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "856f6fcbf377cb6bfb6af97dd3cf3fb82e1c6761e285568576ac5e8651a73160"
+dependencies = [
+ "bytes",
+ "pin-project-lite",
+ "smallvec",
+ "tokio",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1576,6 +1588,7 @@ dependencies = [
  "hyper-util",
  "log",
  "mime",
+ "peekable",
  "quinn",
  "rand",
  "rt-gate",
