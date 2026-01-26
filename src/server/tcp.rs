@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::{collections::HashMap, future::Future};
 
 use crate::{server::tls::TlsFactory, VetisRwLock};
 use log::info;
@@ -59,9 +59,7 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
     fn handle_connections(
         &mut self,
         listener: VetisTcpListener,
-        virtual_host: Arc<
-            VetisRwLock<HashMap<String, Box<dyn VirtualHost + Send + Sync + 'static>>>,
-        >,
+        virtual_host: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>,
     ) -> Result<GateTask, VetisError> {
         //let alpn = if cfg!(feature = "http1") { "http/1.1".into() } else { "h2".into() };
         //let tls_acceptor = TlsFactory::create_tls_acceptor(virtual_host.clone(), alpn).await?;
@@ -78,6 +76,10 @@ pub trait TcpServer: Server<Incoming, Full<Bytes>> {
                 }
 
                 let (stream, _) = result.unwrap();
+                if let Err(e) = stream.set_nodelay(true) {
+                    error!("Cannot set TCP_NODELAY: {}", e);
+                    continue;
+                }
 
                 // TODO: Check if connection is secure first, then handle virtual host,
                 //       path and request, note that virtual host and path are not
@@ -122,9 +124,7 @@ impl ServerHandler {
     pub fn handle<T>(
         &self,
         io: VetisIo<T>,
-        virtual_hosts: Arc<
-            VetisRwLock<HashMap<String, Box<dyn VirtualHost + Send + Sync + 'static>>>,
-        >,
+        virtual_hosts: Arc<VetisRwLock<HashMap<String, Box<dyn VirtualHost>>>>,
     ) -> Result<(), VetisError>
     where
         T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
