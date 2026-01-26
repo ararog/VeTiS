@@ -4,16 +4,18 @@ use http_body_util::Full;
 use hyper::{Response, body::Incoming};
 use vetis::{
     Vetis,
+    errors::VetisError,
     server::{
         config::{SecurityConfig, ServerConfig, VirtualHostConfig},
-        errors::VetisError,
         virtual_host::{DefaultVirtualHost, VirtualHost, handler_fn},
     },
 };
 
+pub const CA_CERT: &[u8] = include_bytes!("../certs/ca.der");
 pub const SERVER_CERT: &[u8] = include_bytes!("../certs/server.der");
 pub const SERVER_KEY: &[u8] = include_bytes!("../certs/server.key.der");
 
+/* 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -23,7 +25,7 @@ struct Args {
         required = false,
         num_args = 0..=1,
         require_equals = true,
-        default_value = "8080",
+        default_value = "8443",
         help = "Set bearer auth token on Authorization header."
     )]
     port: u16,
@@ -60,28 +62,49 @@ struct Args {
         help = "Set server certificate file (DER encoded)."
     )]
     key: String,
-}
+
+    #[arg(
+        short = 'a',
+        long,
+        required = false,
+        num_args = 0..=1,
+        require_equals = true,
+        default_value = "../certs/ca.der",
+        help = "Set server certificate file (DER encoded)."
+    )]
+    ca: String,
+}    
+*/
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std_logger::Config::logfmt().init();
 
+    /* 
     let args = Args::parse();
 
     let interface = args.interface;
     let port = args.port;
+    */
 
     let config = ServerConfig::builder()
-        .port(port)
-        .interface(interface)
+        .port(8443)
+        .interface("0.0.0.0".to_string())
         .build();
 
+    let security_config = SecurityConfig::builder()
+        .ca_cert_from_bytes(CA_CERT.to_vec())
+        .cert_from_bytes(SERVER_CERT.to_vec())
+        .key_from_bytes(SERVER_KEY.to_vec())
+        .build();
+        
     let localhost_config = VirtualHostConfig::builder()
-        .hostname("localhost:8080".to_string())
+        .hostname("localhost".to_string())
+        .security(security_config)
         .build();
 
     let server_config = VirtualHostConfig::builder()
-        .hostname("server:8080".to_string())
+        .hostname("server".to_string())
         .build();
 
     let mut localhost_virtual_host = DefaultVirtualHost::new(localhost_config);

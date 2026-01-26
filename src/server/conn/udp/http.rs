@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
@@ -10,20 +11,22 @@ use hyper::service::service_fn;
 
 use rt_gate::GateTask;
 
-use crate::server::config::ServerConfig;
-use crate::server::errors::{StartError::Tls, VetisError};
-use crate::server::udp::UdpServer;
-use crate::server::Server;
+use crate::server::virtual_host::VirtualHost;
+use crate::{
+    errors::{StartError::Tls, VetisError},
+    server::{config::ServerConfig, conn::udp::UdpServer, Server},
+};
+use crate::{VetisRwLock, VetisVirtualHosts};
 
 pub struct HttpServer {
-    port: u16,
     task: Option<GateTask>,
     config: ServerConfig,
+    virtual_hosts: VetisVirtualHosts,
 }
 
 impl HttpServer {
     pub fn new(config: ServerConfig) -> Self {
-        Self { port: config.port(), task: None, config }
+        Self { task: None, config, virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new())) }
     }
 }
 
@@ -31,7 +34,11 @@ impl UdpServer for HttpServer {}
 
 impl Server<Full<Bytes>, Full<Bytes>> for HttpServer {
     fn port(&self) -> u16 {
-        self.port
+        self.config.port()
+    }
+
+    fn set_virtual_hosts(&mut self, virtual_hosts: VetisVirtualHosts) {
+        self.virtual_hosts = virtual_hosts;
     }
 
     async fn start<H, Fut>(&mut self, handler: H) -> Result<(), VetisError>
