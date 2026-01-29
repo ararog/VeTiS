@@ -54,9 +54,9 @@ use smol_hyper::rt::FuturesIo;
 
 use crate::{
     config::{ListenerConfig, Protocol},
-    errors::{StartError, VetisError},
+    errors::VetisError,
     server::{conn::listener::ServerListener, tls::TlsFactory},
-    Response, VetisRwLock, VetisVirtualHosts,
+    VetisRwLock, VetisVirtualHosts,
 };
 
 #[cfg(feature = "tokio-rt")]
@@ -86,10 +86,6 @@ pub struct TcpServerListener {
 impl ServerListener for TcpServerListener {
     fn new(config: ListenerConfig) -> Self {
         Self { task: None, config, virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new())) }
-    }
-
-    fn port(&self) -> u16 {
-        self.config.port()
     }
 
     fn set_virtual_hosts(&mut self, virtual_hosts: VetisVirtualHosts) {

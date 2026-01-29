@@ -2,7 +2,9 @@
 
 use std::fs;
 
-#[derive(Clone)]
+use crate::errors::{ConfigError, VetisError};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Protocol {
     #[cfg(feature = "http1")]
     HTTP1,
@@ -62,7 +64,7 @@ pub struct ListenerConfig {
 impl ListenerConfig {
     pub fn builder() -> ListenerConfigBuilder {
         ListenerConfigBuilder {
-            port: 0,
+            port: 80,
             ssl: false,
             #[cfg(feature = "http1")]
             protocol: Protocol::HTTP1,
@@ -108,15 +110,9 @@ impl ServerConfigBuilder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ServerConfig {
     listeners: Vec<ListenerConfig>,
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        ServerConfig { listeners: vec![] }
-    }
 }
 
 impl ServerConfig {
@@ -151,8 +147,17 @@ impl VirtualHostConfigBuilder {
         self
     }
 
-    pub fn build(self) -> VirtualHostConfig {
-        VirtualHostConfig { hostname: self.hostname, port: self.port, security: self.security }
+    pub fn build(self) -> Result<VirtualHostConfig, VetisError> {
+        if self
+            .hostname
+            .is_empty()
+        {
+            return Err(VetisError::Config(ConfigError::VirtualHost(
+                "hostname is empty".to_string(),
+            )));
+        }
+
+        Ok(VirtualHostConfig { hostname: self.hostname, port: self.port, security: self.security })
     }
 }
 
@@ -164,7 +169,7 @@ pub struct VirtualHostConfig {
 
 impl VirtualHostConfig {
     pub fn builder() -> VirtualHostConfigBuilder {
-        VirtualHostConfigBuilder { hostname: String::new(), port: 0, security: None }
+        VirtualHostConfigBuilder { hostname: String::new(), port: 80, security: None }
     }
 
     pub fn hostname(&self) -> &String {

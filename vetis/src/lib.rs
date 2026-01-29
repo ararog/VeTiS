@@ -35,7 +35,7 @@ pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<(String, u16), Box<d
 
 use crate::{
     config::ServerConfig,
-    errors::VetisError,
+    errors::{VetisError, VirtualHostError},
     server::{virtual_host::VirtualHost, Server},
 };
 
@@ -110,7 +110,7 @@ impl Vetis {
             .is_empty()
         {
             error!("You must add at least one virtual host");
-            return Err(VetisError::NoVirtualHosts);
+            return Err(VetisError::VirtualHost(VirtualHostError::NoVirtualHosts));
         }
 
         let mut server = server::http::HttpServer::new(self.config.clone());

@@ -1,7 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use rt_gate::GateTask;
-
 #[cfg(any(feature = "http1", feature = "http2"))]
 use crate::server::conn::listener::tcp::TcpServerListener;
 #[cfg(feature = "http3")]
@@ -61,7 +59,6 @@ impl HttpListener {
 
 pub struct HttpServer {
     config: ServerConfig,
-    task: Option<GateTask>,
     listeners: Vec<HttpListener>,
     virtual_hosts: VetisVirtualHosts,
 }
@@ -70,7 +67,6 @@ impl Server for HttpServer {
     fn new(config: ServerConfig) -> Self {
         Self {
             config,
-            task: None,
             listeners: Vec::new(),
             virtual_hosts: Arc::new(VetisRwLock::new(HashMap::new())),
         }
