@@ -26,9 +26,7 @@ macro_rules! http {
 
         let virtual_host = VirtualHost::new(virtual_host_config);
 
-        let root_path = HandlerPath::new_host_path(
-            "/".to_string(),
-            Box::new($handler));
+        let root_path = HandlerPath::new_host_path("/".to_string(), Box::new($handler));
 
         virtual_host.add_path(root_path);
 
@@ -66,9 +64,7 @@ macro_rules! http {
 
             let mut virtual_host = VirtualHost::new(virtual_host_config);
 
-            let root_path = HandlerPath::new_host_path(
-                "/".to_string(),
-                Box::new($handler));
+            let root_path = HandlerPath::new_host_path("/".to_string(), Box::new($handler));
 
             virtual_host.add_path(root_path);
 
