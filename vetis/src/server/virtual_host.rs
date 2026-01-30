@@ -25,7 +25,12 @@ use std::{collections::HashMap, future::Future, pin::Pin};
 
 use hyper::service::service_fn;
 
-use crate::{Request, Response, config::VirtualHostConfig, errors::VetisError, server::path::{HostPath, Path}};
+use crate::{
+    config::VirtualHostConfig,
+    errors::VetisError,
+    server::path::{HostPath, Path},
+    Request, Response,
+};
 
 /// Type alias for boxed handler closures.
 ///
@@ -106,7 +111,11 @@ impl VirtualHost {
     }
 
     pub fn add_path(&mut self, path: HostPath) {
-        self.paths.insert(path.value().to_string(), path);
+        self.paths.insert(
+            path.value()
+                .to_string(),
+            path,
+        );
     }
 
     pub fn config(&self) -> &VirtualHostConfig {
@@ -134,7 +143,9 @@ impl VirtualHost {
         request: Request,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>> {
         let uri_path = request.uri().path();
-        let path = self.paths.get(uri_path);
+        let path = self
+            .paths
+            .get(uri_path);
         if let Some(path) = path {
             path.handle(request)
         } else {

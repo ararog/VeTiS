@@ -171,7 +171,7 @@ fn handle_http_request(
         if let Ok((req, mut stream)) = result {
             let (parts, _) = req.into_parts();
 
-            /* 
+            /*
             let body = if parts.method == http::Method::POST
                 || parts.method == http::Method::PUT
                 || parts.method == http::Method::PATCH
