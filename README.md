@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Overview
+## ✨ Overview
 
 ### Core Features
 
