@@ -3,7 +3,7 @@ use vetis::{
     Vetis,
     config::{ListenerConfig, Protocol, SecurityConfig, ServerConfig, VirtualHostConfig},
     server::{
-        path::HandlerPath,
+        path::{HandlerPath, StaticPath},
         virtual_host::{VirtualHost, handler_fn},
     },
 };
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut localhost_virtual_host = VirtualHost::new(localhost_config);
 
     let root_path = HandlerPath::new_host_path(
-        "/".to_string(),
+        "/hello".to_string(),
         handler_fn(|request| async move {
             let response = vetis::Response::builder()
                 .status(StatusCode::OK)
@@ -51,6 +51,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     localhost_virtual_host.add_path(root_path);
+
+    let health_path = HandlerPath::new_host_path(
+        "/health".to_string(),
+        handler_fn(|request| async move {
+            let response = vetis::Response::builder()
+                .status(StatusCode::OK)
+                .body(b"Health check");
+            Ok(response)
+        }),
+    );
+
+    localhost_virtual_host.add_path(health_path);
+
+    let images_path = StaticPath::builder()
+        .uri("/images".to_string())
+        .directory("/home/rogerio/Downloads".to_string())
+        .extensions("\\.(jpg|png|gif)$".to_string())
+        .build()?;
+
+    localhost_virtual_host.add_path(images_path);
 
     let mut server = Vetis::new(config);
     server

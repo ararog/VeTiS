@@ -20,7 +20,7 @@ use vetis_macros::http;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler = handler_fn(|req| async move {
-        Ok(vetis::Response::builder().body(http_body_util::Full::from("Hello, World!")))
+        Ok(vetis::Response::builder().text("Hello, World!"))
     });
 
     let mut server =

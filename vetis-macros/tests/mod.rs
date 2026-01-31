@@ -5,7 +5,7 @@ use vetis_macros::http;
 #[tokio::test]
 async fn test_http() -> Result<(), Box<dyn std::error::Error>> {
     let handler =
-        handler_fn(|req| async move { Ok(vetis::Response::builder().body(b"Hello, World!")) });
+        handler_fn(|_req| async move { Ok(vetis::Response::builder().text("Hello, World!")) });
 
     let mut server = http!(
         hostname => "localhost".to_string(),
