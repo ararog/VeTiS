@@ -144,4 +144,8 @@ pub enum VirtualHostError {
     /// No virtual hosts have been added to the server
     #[error("No virtual hosts")]
     NoVirtualHosts,
+
+    /// Invalid path configuration
+    #[error("Invalid path: {0}")]
+    InvalidPath(String),
 }

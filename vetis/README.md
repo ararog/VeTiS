@@ -1,5 +1,7 @@
 # VeTiS (Very Tiny Server)
 
+[![Crates.io downloads](https://img.shields.io/crates/d/vetis)](https://crates.io/crates/vetis) [![crates.io](https://img.shields.io/crates/v/vetis?style=flat-square)](https://crates.io/crates/vetis) [![Build Status](https://github.com/ararog/vetis/actions/workflows/rust.yml/badge.svg?event=push)](https://github.com/ararog/vetis/actions/workflows/rust.yml) ![Crates.io MSRV](https://img.shields.io/crates/msrv/vetis) [![Documentation](https://docs.rs/vetis/badge.svg)](https://docs.rs/vetis/latest/vetis) [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/ararog/vetis/blob/main/LICENSE.md)  [![codecov](https://codecov.io/gh/ararog/vetis/graph/badge.svg?token=T0HSBAPVSI)](https://codecov.io/gh/ararog/vetis)
+
 🚀 **A blazingly fast, minimalist HTTP server built for modern Rust applications**
 
 VeTiS is a lightweight yet powerful web server that brings simplicity and performance together. Designed with Rust's safety guarantees in mind, it delivers HTTP/1, HTTP/2, and HTTP/3 support with a clean, intuitive API that makes building web services a breeze.
@@ -40,8 +42,6 @@ vetis = { version = "0.1.0", features = ["tokio-rt", "http2", "tokio-rust-tls"] 
 Here's how simple it is to create a web server with VeTiS:
 
 ```rust
-use bytes::Bytes;
-use http_body_util::Full;
 use hyper::StatusCode;
 use vetis::{
     Vetis,
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut root_path = HandlerPath::new("/", handler_fn(|request| async move {
          let response = vetis::Response::builder()
              .status(StatusCode::OK)
-             .body(Full::new(Bytes::from("Hello, World!")));
+             .text("Hello, World!");
          Ok(response)
     }));
      
@@ -105,22 +105,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## ✨ Overview
+
+### Core Features
+
+- **🌐 Virtual Hosts** - Host multiple domains on a single server
+- **🔐 SNI Support** - Server Name Indication for TLS
+
+### Content & Security
+
+- **📁 Static File Serving** - Efficient static asset delivery
+- **🎭 Dynamic Content** - Template rendering and content generation
+
 ## 🗺️ Roadmap
 
 VeTiS is continuously evolving! Here's what we're working on:
 
 ### Core Features
 
-- **🌐 Virtual Hosts** - Host multiple domains on a single server
 - **🔌 WebSockets** - Real-time bidirectional communication
-- **🔐 SNI Support** - Server Name Indication for TLS
 - **🔄 Reverse Proxy** - Route requests to backend services
 - **⚖️ Load Balancing** - Distribute traffic across multiple servers
 
 ### Content & Security
 
-- **📁 Static File Serving** - Efficient static asset delivery
-- **🎭 Dynamic Content** - Template rendering and content generation
 - **🔑 Authentication** - Multiple auth methods support
 - **🛡️ Authorization** - Fine-grained access control
 - **📊 Logging** - Comprehensive request and error logging
