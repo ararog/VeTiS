@@ -21,7 +21,9 @@
 ///     Ok(response)
 /// }));
 /// ```
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{borrow::Cow, future::Future, pin::Pin};
+
+use radix_trie::Trie;
 
 use crate::{
     config::VirtualHostConfig,
@@ -100,12 +102,12 @@ where
 // All of them should have a handler to process requests
 pub struct VirtualHost {
     config: VirtualHostConfig,
-    paths: HashMap<String, HostPath>,
+    paths: Trie<String, HostPath>,
 }
 
 impl VirtualHost {
     pub fn new(config: VirtualHostConfig) -> Self {
-        Self { config, paths: HashMap::new() }
+        Self { config, paths: Trie::new() }
     }
 
     pub fn add_path(&mut self, path: HostPath) {
@@ -139,19 +141,28 @@ impl VirtualHost {
     pub fn route(
         &self,
         request: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>> {
-        let uri_path = request.uri().path();
-        let path = self
+    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
+        let uri_path = request
+            .uri()
+            .path()
+            .to_string();
+
+        let matches = self
             .paths
-            .get(uri_path);
-        if let Some(path) = path {
-            path.handle(request)
-        } else {
-            Box::pin(async move {
+            .get_ancestor_value(&uri_path);
+
+        let Some(path) = matches else {
+            return Box::pin(async move {
                 Ok(Response::builder()
                     .status(http::StatusCode::NOT_FOUND)
                     .body(b"Not Found"))
-            })
-        }
+            });
+        };
+
+        let target_path = uri_path
+            .strip_prefix(path.value())
+            .unwrap_or(&uri_path);
+
+        path.handle(request, Cow::Owned(target_path.to_string()))
     }
 }

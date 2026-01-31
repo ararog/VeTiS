@@ -1,14 +1,18 @@
-use std::{future::Future, pin::Pin};
+use std::{borrow::Cow, fs, future::Future, pin::Pin};
 
-use crate::{errors::VetisError, server::virtual_host::BoxedHandlerClosure, Request, Response};
+use crate::{
+    errors::{VetisError, VirtualHostError},
+    server::virtual_host::BoxedHandlerClosure,
+    Request, Response,
+};
 
 pub trait Path {
     fn value(&self) -> &str;
-    fn match_path(&self, path: &str) -> bool;
-    fn handle(
-        &self,
+    fn handle<'a>(
+        &'a self,
         request: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>>;
+        uri: Cow<'a, str>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + 'a>>;
 }
 
 pub enum HostPath {
@@ -26,22 +30,15 @@ impl Path for HostPath {
         }
     }
 
-    fn match_path(&self, path: &str) -> bool {
-        match self {
-            HostPath::Handler(handler) => handler.match_path(path),
-            HostPath::Proxy(proxy) => proxy.match_path(path),
-            HostPath::Static(static_path) => static_path.match_path(path),
-        }
-    }
-
-    fn handle(
-        &self,
+    fn handle<'a>(
+        &'a self,
         request: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>> {
+        uri: Cow<'a, str>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + 'a>> {
         match self {
-            HostPath::Handler(handler) => handler.handle(request),
-            HostPath::Proxy(proxy) => proxy.handle(request),
-            HostPath::Static(static_path) => static_path.handle(request),
+            HostPath::Handler(handler) => handler.handle(request, uri),
+            HostPath::Proxy(proxy) => proxy.handle(request, uri),
+            HostPath::Static(static_path) => static_path.handle(request, uri),
         }
     }
 }
@@ -62,21 +59,94 @@ impl Path for HandlerPath {
         &self.uri
     }
 
-    fn match_path(&self, path: &str) -> bool {
-        self.uri == path
+    fn handle<'a>(
+        &'a self,
+        request: Request,
+        uri: Cow<'a, str>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + 'a>> {
+        (self.handler)(request)
+    }
+}
+
+pub struct StaticPathBuilder {
+    uri: String,
+    extensions: String,
+    directory: String,
+}
+
+impl StaticPathBuilder {
+    pub fn uri(mut self, uri: String) -> Self {
+        self.uri = uri;
+        self
     }
 
-    fn handle(
-        &self,
-        request: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>> {
-        (self.handler)(request)
+    pub fn extensions(mut self, extensions: String) -> Self {
+        self.extensions = extensions;
+        self
+    }
+
+    pub fn directory(mut self, directory: String) -> Self {
+        self.directory = directory;
+        self
+    }
+
+    pub fn build(self) -> Result<HostPath, VetisError> {
+        if self.uri.is_empty() {
+            return Err(VetisError::VirtualHost(VirtualHostError::InvalidPath(
+                "URI cannot be empty".to_string(),
+            )));
+        }
+        if self
+            .extensions
+            .is_empty()
+        {
+            return Err(VetisError::VirtualHost(VirtualHostError::InvalidPath(
+                "Extensions cannot be empty".to_string(),
+            )));
+        }
+        if self
+            .directory
+            .is_empty()
+        {
+            return Err(VetisError::VirtualHost(VirtualHostError::InvalidPath(
+                "Directory cannot be empty".to_string(),
+            )));
+        }
+
+        Ok(HostPath::Static(StaticPath {
+            uri: self.uri,
+            extensions: self.extensions,
+            directory: self.directory,
+        }))
     }
 }
 
 pub struct StaticPath {
     uri: String,
+    extensions: String,
     directory: String,
+}
+
+impl StaticPath {
+    pub fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    pub fn extensions(&self) -> &str {
+        &self.extensions
+    }
+
+    pub fn directory(&self) -> &str {
+        &self.directory
+    }
+
+    pub fn builder() -> StaticPathBuilder {
+        StaticPathBuilder {
+            uri: String::new(),
+            extensions: String::new(),
+            directory: String::new(),
+        }
+    }
 }
 
 impl Path for StaticPath {
@@ -84,15 +154,33 @@ impl Path for StaticPath {
         &self.uri
     }
 
-    fn match_path(&self, path: &str) -> bool {
-        self.uri == path
-    }
-
-    fn handle(
-        &self,
+    fn handle<'a>(
+        &'a self,
         request: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>> {
-        todo!()
+        uri: Cow<'a, str>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + 'a>> {
+        Box::pin(async move {
+            let ext_regex = regex::Regex::new(&self.extensions);
+            if let Ok(ext_regex) = ext_regex {
+                if !ext_regex.is_match(uri.as_ref()) {
+                    return Ok(Response::builder()
+                        .status(http::StatusCode::BAD_REQUEST)
+                        .text("Invalid file extension"));
+                }
+            }
+
+            let result = fs::read(format!("{}/{}", self.directory, uri));
+            if let Ok(data) = result {
+                return Ok(Response::builder()
+                    .status(http::StatusCode::OK)
+                    .body(data.as_slice()));
+            }
+
+            // TODO: return 404
+            Ok(Response::builder()
+                .status(http::StatusCode::NOT_FOUND)
+                .text("Not found"))
+        })
     }
 }
 
@@ -103,16 +191,13 @@ pub struct ProxyPath {
 
 impl Path for ProxyPath {
     fn value(&self) -> &str {
-        todo!()
-    }
-
-    fn match_path(&self, path: &str) -> bool {
-        todo!()
+        &self.uri
     }
 
     fn handle(
         &self,
-        request: Request,
+        _request: Request,
+        _uri: Cow<str>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send>> {
         todo!()
     }
