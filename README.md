@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let https = ListenerConfig::builder()
         .port(8443)
         .protocol(vetis::config::Protocol::HTTP1)
-        .interface("0.0.0.0".to_string())
+        .interface("0.0.0.0")
         .build();
 
     let config = ServerConfig::builder()
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let localhost_config = VirtualHostConfig::builder()
-        .hostname("localhost".to_string())
+        .hostname("localhost")
         .port(8443)
         .security(security_config)
         .build()?;

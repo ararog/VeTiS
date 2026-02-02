@@ -100,7 +100,7 @@ mod static_files {
         assert_eq!(
             some_path.err(),
             Some(VetisError::VirtualHost(VirtualHostError::InvalidPath(
-                "URI cannot be empty".to_string(),
+                "URI cannot be empty".into(),
             )))
         );
     }
@@ -115,7 +115,7 @@ mod static_files {
         assert_eq!(
             some_path.err(),
             Some(VetisError::VirtualHost(VirtualHostError::InvalidPath(
-                "Extensions cannot be empty".to_string(),
+                "Extensions cannot be empty".into(),
             )))
         );
     }
@@ -131,7 +131,7 @@ mod static_files {
         assert_eq!(
             some_path.err(),
             Some(VetisError::VirtualHost(VirtualHostError::InvalidPath(
-                "Directory cannot be empty".to_string(),
+                "Directory cannot be empty".into(),
             )))
         );
     }
@@ -180,7 +180,7 @@ mod reverse_proxy {
         assert_eq!(
             some_path.err(),
             Some(VetisError::VirtualHost(VirtualHostError::InvalidPath(
-                "URI cannot be empty".to_string(),
+                "URI cannot be empty".into(),
             )))
         );
 
@@ -197,7 +197,7 @@ mod reverse_proxy {
         assert_eq!(
             some_path.err(),
             Some(VetisError::VirtualHost(VirtualHostError::InvalidPath(
-                "Target cannot be empty".to_string(),
+                "Target cannot be empty".into(),
             )))
         );
 

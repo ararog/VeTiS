@@ -70,12 +70,12 @@ impl<'a> Listener<'a> for UdpListener<'a> {
 
             if let Some(tls_config) = tls_config {
                 let quic_config = QuicServerConfig::try_from(tls_config)
-                    .map_err(|e| VetisError::Start(Tls(e.to_string())))?;
+                    .map_err(|e| VetisError::Start(Tls(e)))?;
 
                 let server_config = quinn::ServerConfig::with_crypto(Arc::new(quic_config));
 
                 let endpoint = quinn::Endpoint::server(server_config, addr)
-                    .map_err(|e| VetisError::Bind(e.to_string()))?;
+                    .map_err(|e| VetisError::Bind(e))?;
 
                 let server_task = self
                     .handle_connections(
@@ -206,11 +206,7 @@ fn handle_http_request<'a>(
                     .read()
                     .await;
 
-                let virtual_host = virtual_host.get(&(
-                    host.host()
-                        .to_string(),
-                    port,
-                ));
+                let virtual_host = virtual_host.get(&(host.host(), port));
 
                 let response = if let Some(virtual_host) = virtual_host {
                     let request = crate::Request::from_quic(request);
@@ -259,7 +255,7 @@ fn handle_http_request<'a>(
 
                     Ok::<_, VetisError>(response)
                 } else {
-                    error!("Virtual host not found: {}", host.to_string());
+                    error!("Virtual host not found: {}", host);
                     let response = Response::builder()
                         .status(404)
                         .body(Full::new(Bytes::from_static(b"Virtual host not found")))

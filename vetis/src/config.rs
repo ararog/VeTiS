@@ -16,7 +16,7 @@
 //! let listener = ListenerConfig::builder()
 //!     .port(8443)
 //!     .protocol(Protocol::HTTP1)
-//!     .interface("0.0.0.0".to_string())
+//!     .interface("0.0.0.0")
 //!     .build();
 //!
 //! // Configure server with multiple listeners
@@ -32,7 +32,7 @@
 //!
 //! // Configure virtual host
 //! let vhost_config = VirtualHostConfig::builder()
-//!     .hostname("example.com".to_string())
+//!     .hostname("example.com")
 //!     .port(8443)
 //!     .security(security)
 //!     .build()?;
@@ -40,7 +40,7 @@
 
 use std::fs;
 
-use ecow::EcoString;
+use std::sync::Arc;
 
 use crate::errors::{ConfigError, VetisError};
 
@@ -96,7 +96,7 @@ pub struct ListenerConfigBuilder {
     port: u16,
     ssl: bool,
     protocol: Protocol,
-    interface: EcoString,
+    interface: Arc<str>,
 }
 
 impl ListenerConfigBuilder {
@@ -149,7 +149,7 @@ impl ListenerConfigBuilder {
     ///     .build();
     /// ```
     pub fn interface(mut self, interface: &str) -> Self {
-        self.interface = EcoString::from(interface);
+        self.interface = Arc::from(interface);
         self
     }
 
@@ -204,7 +204,7 @@ pub struct ListenerConfig {
     port: u16,
     ssl: bool,
     protocol: Protocol,
-    interface: EcoString,
+    interface: Arc<str>,
 }
 
 impl ListenerConfig {
@@ -399,9 +399,9 @@ impl ServerConfig {
 ///     .build()?;
 /// ```
 pub struct VirtualHostConfigBuilder {
-    hostname: EcoString,
+    hostname: Arc<str>,
     port: u16,
-    default_headers: Option<Vec<(EcoString, EcoString)>>,
+    default_headers: Option<Vec<(Arc<str>, Arc<str>)>>,
     security: Option<SecurityConfig>,
 }
 
@@ -420,7 +420,7 @@ impl VirtualHostConfigBuilder {
     ///     .build()?;
     /// ```
     pub fn hostname(mut self, hostname: &str) -> Self {
-        self.hostname = EcoString::from(hostname);
+        self.hostname = Arc::from(hostname);
         self
     }
 
@@ -455,7 +455,7 @@ impl VirtualHostConfigBuilder {
     ///     .header("X-Custom", "value")
     ///     .build()?;
     /// ```
-    pub fn header(mut self, key: EcoString, value: EcoString) -> Self {
+    pub fn header(mut self, key: Arc<str>, value: Arc<str>) -> Self {
         if self
             .default_headers
             .is_none()
@@ -549,9 +549,9 @@ impl VirtualHostConfigBuilder {
 /// println!("Virtual host: {}:{}", config.hostname(), config.port());
 /// ```
 pub struct VirtualHostConfig {
-    hostname: EcoString,
+    hostname: Arc<str>,
     port: u16,
-    default_headers: Option<Vec<(EcoString, EcoString)>>,
+    default_headers: Option<Vec<(Arc<str>, Arc<str>)>>,
     security: Option<SecurityConfig>,
 }
 
@@ -575,7 +575,7 @@ impl VirtualHostConfig {
     /// ```
     pub fn builder() -> VirtualHostConfigBuilder {
         VirtualHostConfigBuilder {
-            hostname: EcoString::from(""),
+            hostname: Arc::from(""),
             port: 80,
             default_headers: None,
             security: None,
@@ -593,7 +593,7 @@ impl VirtualHostConfig {
     }
 
     /// Returns the default headers.
-    pub fn default_headers(&self) -> &Option<Vec<(EcoString, EcoString)>> {
+    pub fn default_headers(&self) -> &Option<Vec<(Arc<str>, Arc<str>)>> {
         &self.default_headers
     }
 
