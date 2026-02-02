@@ -20,7 +20,7 @@
 //!
 //! // Create a virtual host with a custom handler
 //! let vhost_config = VirtualHostConfig::builder()
-//!     .hostname("example.com".to_string())
+//!     .hostname("example.com")
 //!     .port(80)
 //!     .build()?;
 //!

@@ -100,8 +100,8 @@ macro_rules! https {
             .build();
 
         let security_config = SecurityConfig::builder()
-            .cert_from_file($cert.to_string())
-            .key_from_file($key.to_string())
+            .cert_from_file($cert)
+            .key_from_file($key)
             .build();
 
         let virtual_host_config = VirtualHostConfig::builder()

@@ -89,7 +89,7 @@ impl Listener for TcpListener {
         self.virtual_hosts = virtual_hosts;
     }
 
-    fn listen(&mut self) -> ListenerResult<()> {
+    fn listen(&mut self) -> ListenerResult<'_, ()> {
         let future = async move {
             let addr = if let Ok(ip) = self
                 .config
@@ -132,7 +132,7 @@ impl Listener for TcpListener {
         Box::pin(future)
     }
 
-    fn stop(&mut self) -> ListenerResult<()> {
+    fn stop(&mut self) -> ListenerResult<'_, ()> {
         let future = async move {
             if let Some(mut task) = self.task.take() {
                 task.cancel().await;

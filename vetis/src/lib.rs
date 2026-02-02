@@ -42,7 +42,7 @@
 //!     let https = ListenerConfig::builder()
 //!         .port(8443)
 //!         .protocol(vetis::config::Protocol::HTTP1)
-//!         .interface("0.0.0.0".to_string())
+//!         .interface("0.0.0.0")
 //!         .build();
 //!
 //!     let config = ServerConfig::builder()
@@ -57,7 +57,7 @@
 //!
 //!     // Configure virtual host
 //!     let localhost_config = VirtualHostConfig::builder()
-//!         .hostname("localhost".to_string())
+//!         .hostname("localhost")
 //!         .port(8443)
 //!         .security(security_config)
 //!         .build()?;
@@ -142,7 +142,6 @@ compile_error!("Only one runtime feature can be enabled at a time.");
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::Bytes;
-use ecow::EcoString;
 use http_body_util::{Either, Full};
 use hyper::body::Incoming;
 
@@ -163,7 +162,7 @@ use tokio::sync::RwLock;
 
 pub(crate) type VetisRwLock<T> = RwLock<T>;
 
-pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<(EcoString, u16), VirtualHost>>>;
+pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<(Arc<str>, u16), VirtualHost>>>;
 
 use crate::{
     config::ServerConfig,
@@ -266,7 +265,7 @@ impl Vetis {
     /// server.add_virtual_host(vhost).await;
     /// ```
     pub async fn add_virtual_host(&mut self, virtual_host: VirtualHost) {
-        let key = (EcoString::from(virtual_host.hostname()), virtual_host.port());
+        let key = (Arc::from(virtual_host.hostname()), virtual_host.port());
 
         self.virtual_hosts
             .write()

@@ -9,7 +9,7 @@
 ///
 /// // Create a virtual host with a simple handler
 /// let config = VirtualHostConfig::builder()
-///     .hostname("example.com".to_string())
+///     .hostname("example.com")
 ///     .port(80)
 ///     .build()?;
 ///
@@ -23,8 +23,8 @@
 /// ```
 use std::{future::Future, pin::Pin};
 
-use ecow::EcoString;
 use radix_trie::Trie;
+use std::sync::Arc;
 
 use crate::{
     config::VirtualHostConfig,
@@ -85,7 +85,7 @@ pub type BoxedHandlerClosure = Box<
 /// }
 ///
 /// let config = VirtualHostConfig::builder()
-///     .hostname("example.com".to_string())
+///     .hostname("example.com")
 ///     .port(80)
 ///     .build()?;
 ///
@@ -126,7 +126,6 @@ impl VirtualHost {
     pub fn hostname(&self) -> &str {
         self.config
             .hostname()
-            .clone()
     }
 
     pub fn port(&self) -> u16 {
@@ -164,6 +163,6 @@ impl VirtualHost {
             .strip_prefix(path.uri())
             .unwrap_or(&uri_path);
 
-        path.handle(request, EcoString::from(target_path))
+        path.handle(request, Arc::from(target_path))
     }
 }
