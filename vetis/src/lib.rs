@@ -141,8 +141,8 @@ compile_error!("Only one runtime feature can be enabled at a time.");
 
 use std::{collections::HashMap, sync::Arc};
 
-use arcstr::ArcStr;
 use bytes::Bytes;
+use ecow::EcoString;
 use http_body_util::{Either, Full};
 use hyper::body::Incoming;
 
@@ -163,7 +163,7 @@ use tokio::sync::RwLock;
 
 pub(crate) type VetisRwLock<T> = RwLock<T>;
 
-pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<(ArcStr, u16), VirtualHost>>>;
+pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<(EcoString, u16), VirtualHost>>>;
 
 use crate::{
     config::ServerConfig,
@@ -266,7 +266,7 @@ impl Vetis {
     /// server.add_virtual_host(vhost).await;
     /// ```
     pub async fn add_virtual_host(&mut self, virtual_host: VirtualHost) {
-        let key = (ArcStr::from(virtual_host.hostname()), virtual_host.port());
+        let key = (EcoString::from(virtual_host.hostname()), virtual_host.port());
 
         self.virtual_hosts
             .write()

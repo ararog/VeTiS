@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let https = ListenerConfig::builder()
         .port(8443)
         .protocol(Protocol::Http1)
-        .interface("0.0.0.0".to_string())
+        .interface("0.0.0.0")
         .build();
 
     let config = ServerConfig::builder()
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let localhost_config = VirtualHostConfig::builder()
-        .hostname("localhost".to_string())
+        .hostname("localhost")
         .port(8443)
         .security(security_config)
         .build()?;
@@ -41,11 +41,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut localhost_virtual_host = VirtualHost::new(localhost_config);
 
     let root_path = HandlerPath::new_host_path(
-        "/hello".to_string(),
+        "/hello",
         handler_fn(|request| async move {
             let response = vetis::Response::builder()
                 .status(StatusCode::OK)
-                .body(b"Hello from localhost");
+                .text("Hello from localhost");
             Ok(response)
         }),
     );
@@ -53,11 +53,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     localhost_virtual_host.add_path(root_path);
 
     let health_path = HandlerPath::new_host_path(
-        "/health".to_string(),
+        "/health",
         handler_fn(|request| async move {
             let response = vetis::Response::builder()
                 .status(StatusCode::OK)
-                .body(b"Health check");
+                .text("Health check");
             Ok(response)
         }),
     );
@@ -65,9 +65,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     localhost_virtual_host.add_path(health_path);
 
     let images_path = StaticPath::builder()
-        .uri("/images".to_string())
-        .directory("/home/rogerio/Downloads".to_string())
-        .extensions("\\.(jpg|png|gif)$".to_string())
+        .uri("/images")
+        .directory("/home/rogerio/Downloads")
+        .extensions("\\.(jpg|png|gif)$")
         .build()?;
 
     localhost_virtual_host.add_path(images_path);
