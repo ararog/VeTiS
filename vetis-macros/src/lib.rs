@@ -12,7 +12,7 @@ macro_rules! http {
 
             let listener = ListenerConfig::builder()
                 .port($port)
-                .interface($interface.to_string())
+                .interface($interface)
                 .build();
 
             let config = ServerConfig::builder()
@@ -26,7 +26,7 @@ macro_rules! http {
 
             let mut virtual_host = VirtualHost::new(virtual_host_config);
 
-            let root_path = HandlerPath::new_host_path("/".to_string(), Box::new($handler));
+            let root_path = HandlerPath::new_host_path("/", Box::new($handler));
 
             virtual_host.add_path(root_path);
 
@@ -51,7 +51,7 @@ macro_rules! http {
 
             let listener = ListenerConfig::builder()
                 .port($port)
-                .interface($interface.to_string())
+                .interface($interface)
                 .build();
 
             let config = ServerConfig::builder()
@@ -59,13 +59,13 @@ macro_rules! http {
                 .build();
 
             let virtual_host_config = VirtualHostConfig::builder()
-                .hostname($hostname.to_string())
+                .hostname($hostname)
                 .port($port)
                 .build()?;
 
             let mut virtual_host = VirtualHost::new(virtual_host_config);
 
-            let root_path = HandlerPath::new_host_path("/".to_string(), Box::new($handler));
+            let root_path = HandlerPath::new_host_path("/", Box::new($handler));
 
             virtual_host.add_path(root_path);
 
@@ -92,7 +92,7 @@ macro_rules! https {
 
         let listener = ListenerConfig::builder()
             .port($port)
-            .interface($interface.to_string())
+            .interface($interface)
             .build();
 
         let config = ServerConfig::builder()
@@ -105,14 +105,14 @@ macro_rules! https {
             .build();
 
         let virtual_host_config = VirtualHostConfig::builder()
-            .hostname($hostname.to_string())
+            .hostname($hostname)
             .port($port)
             .security(security_config)
             .build()?;
 
         let mut virtual_host = VirtualHost::new(virtual_host_config);
 
-        let root_path = HandlerPath::new_host_path("/".to_string(), Box::new($handler));
+        let root_path = HandlerPath::new_host_path("/", Box::new($handler));
 
         virtual_host.add_path(root_path);
 

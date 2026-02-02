@@ -1,7 +1,12 @@
-use std::{borrow::Cow, fs, future::Future, pin::Pin, sync::OnceLock};
+use std::{future::Future, pin::Pin, sync::OnceLock};
 
 #[cfg(feature = "static-files")]
-use arcstr::ArcStr;
+use std::fs;
+
+#[cfg(feature = "reverse-proxy")]
+use deboa::Client;
+
+use ecow::EcoString;
 
 use crate::{
     errors::{VetisError, VirtualHostError},
@@ -9,14 +14,15 @@ use crate::{
     Request, Response,
 };
 
-static CLIENT: OnceLock<deboa::Client> = OnceLock::new();
+#[cfg(feature = "reverse-proxy")]
+static CLIENT: OnceLock<Client> = OnceLock::new();
 
 pub trait Path {
     fn uri(&self) -> &str;
     fn handle(
         &self,
         request: Request,
-        uri: ArcStr,
+        uri: EcoString,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>>;
 }
 
@@ -42,7 +48,7 @@ impl Path for HostPath {
     fn handle(
         &self,
         request: Request,
-        uri: ArcStr,
+        uri: EcoString,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         match self {
             HostPath::Handler(handler) => handler.handle(request, uri),
@@ -55,13 +61,13 @@ impl Path for HostPath {
 }
 
 pub struct HandlerPath {
-    uri: ArcStr,
+    uri: EcoString,
     handler: BoxedHandlerClosure,
 }
 
 impl HandlerPath {
     pub fn new_host_path(uri: &str, handler: BoxedHandlerClosure) -> HostPath {
-        HostPath::Handler(Self { uri: ArcStr::from(uri), handler })
+        HostPath::Handler(Self { uri: EcoString::from(uri), handler })
     }
 }
 
@@ -73,7 +79,7 @@ impl Path for HandlerPath {
     fn handle(
         &self,
         request: Request,
-        _uri: ArcStr,
+        _uri: EcoString,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         (self.handler)(request)
     }
@@ -81,25 +87,25 @@ impl Path for HandlerPath {
 
 #[cfg(feature = "static-files")]
 pub struct StaticPathBuilder {
-    uri: ArcStr,
-    extensions: ArcStr,
-    directory: ArcStr,
+    uri: EcoString,
+    extensions: EcoString,
+    directory: EcoString,
 }
 
 #[cfg(feature = "static-files")]
 impl StaticPathBuilder {
     pub fn uri(mut self, uri: &str) -> Self {
-        self.uri = ArcStr::from(uri);
+        self.uri = EcoString::from(uri);
         self
     }
 
     pub fn extensions(mut self, extensions: &str) -> Self {
-        self.extensions = ArcStr::from(extensions);
+        self.extensions = EcoString::from(extensions);
         self
     }
 
     pub fn directory(mut self, directory: &str) -> Self {
-        self.directory = ArcStr::from(directory);
+        self.directory = EcoString::from(directory);
         self
     }
 
@@ -136,9 +142,9 @@ impl StaticPathBuilder {
 
 #[cfg(feature = "static-files")]
 pub struct StaticPath {
-    uri: ArcStr,
-    extensions: ArcStr,
-    directory: ArcStr,
+    uri: EcoString,
+    extensions: EcoString,
+    directory: EcoString,
 }
 
 #[cfg(feature = "static-files")]
@@ -153,9 +159,9 @@ impl StaticPath {
 
     pub fn builder() -> StaticPathBuilder {
         StaticPathBuilder {
-            uri: ArcStr::from(""),
-            extensions: ArcStr::from(""),
-            directory: ArcStr::from(""),
+            uri: EcoString::from(""),
+            extensions: EcoString::from(""),
+            directory: EcoString::from(""),
         }
     }
 }
@@ -169,7 +175,7 @@ impl Path for StaticPath {
     fn handle(
         &self,
         _request: Request,
-        uri: ArcStr,
+        uri: EcoString,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         Box::pin(async move {
             let ext_regex = regex::Regex::new(&self.extensions);
@@ -201,19 +207,19 @@ impl Path for StaticPath {
 
 #[cfg(feature = "reverse-proxy")]
 pub struct ProxyPathBuilder {
-    uri: ArcStr,
-    target: ArcStr,
+    uri: EcoString,
+    target: EcoString,
 }
 
 #[cfg(feature = "reverse-proxy")]
 impl ProxyPathBuilder {
     pub fn uri(mut self, uri: &str) -> Self {
-        self.uri = ArcStr::from(uri);
+        self.uri = EcoString::from(uri);
         self
     }
 
     pub fn target(mut self, target: &str) -> Self {
-        self.target = ArcStr::from(target);
+        self.target = EcoString::from(target);
         self
     }
 
@@ -238,8 +244,8 @@ impl ProxyPathBuilder {
 
 #[cfg(feature = "reverse-proxy")]
 pub struct ProxyPath {
-    uri: ArcStr,
-    target: ArcStr,
+    uri: EcoString,
+    target: EcoString,
 }
 
 #[cfg(feature = "reverse-proxy")]
@@ -262,7 +268,7 @@ impl Path for ProxyPath {
     fn handle(
         &self,
         request: Request,
-        uri: ArcStr,
+        uri: EcoString,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         let (request_parts, request_body) = request.into_http_parts();
 

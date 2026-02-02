@@ -8,7 +8,7 @@ async fn test_http() -> Result<(), Box<dyn std::error::Error>> {
         handler_fn(|_req| async move { Ok(vetis::Response::builder().text("Hello, World!")) });
 
     let mut server = http!(
-        hostname => "localhost".to_string(),
+        hostname => "localhost",
         port => 8080,
         interface => "0.0.0.0",
         handler => handler

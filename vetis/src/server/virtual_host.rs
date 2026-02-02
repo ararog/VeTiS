@@ -21,9 +21,9 @@
 ///     Ok(response)
 /// }));
 /// ```
-use std::{borrow::Cow, future::Future, pin::Pin};
+use std::{future::Future, pin::Pin};
 
-use arcstr::ArcStr;
+use ecow::EcoString;
 use radix_trie::Trie;
 
 use crate::{
@@ -164,6 +164,6 @@ impl VirtualHost {
             .strip_prefix(path.uri())
             .unwrap_or(&uri_path);
 
-        path.handle(request, ArcStr::from(target_path))
+        path.handle(request, EcoString::from(target_path))
     }
 }
