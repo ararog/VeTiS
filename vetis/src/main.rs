@@ -68,10 +68,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
         let listener = ListenerConfig::builder()
             .port(8080)
             .build();
-        let server = ServerConfig::builder()
+
+        let server_config = ServerConfig::builder()
             .add_listener(listener)
             .build();
-        let mut server = Vetis::new(server);
+
+        let mut server = Vetis::new(server_config);
 
         let static_path_config = StaticPathConfig::builder()
             .uri("/static")
