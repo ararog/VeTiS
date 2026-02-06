@@ -35,7 +35,7 @@ pub trait Path {
     fn handle(
         &self,
         request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>>;
 }
 
@@ -61,7 +61,7 @@ impl Path for HostPath {
     fn handle(
         &self,
         request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         match self {
             HostPath::Handler(handler) => handler.handle(request, uri),
@@ -133,7 +133,7 @@ impl Path for HandlerPath {
     fn handle(
         &self,
         request: Request,
-        _uri: Arc<str>,
+        _uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         (self.handler)(request)
     }
@@ -202,7 +202,7 @@ impl Path for StaticPath {
     fn handle(
         &self,
         _request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         Box::pin(async move {
             let ext_regex = regex::Regex::new(
@@ -268,22 +268,14 @@ impl Path for ProxyPath {
     fn handle(
         &self,
         request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         let (request_parts, _request_body) = request.into_http_parts();
-
-        let target_path = request_parts
-            .uri
-            .path()
-            .strip_prefix(uri.as_ref())
-            .unwrap_or("");
-
-        let target_path = Arc::<str>::from(target_path);
 
         let target = self.config.target();
 
         Box::pin(async move {
-            let target_url = format!("{}{}", target, target_path);
+            let target_url = format!("{}{}", target, uri);
             let deboa_request = DeboaRequest::at(target_url, request_parts.method)
                 .map_err(|e| VetisError::VirtualHost(VirtualHostError::Proxy(e.to_string())))?
                 .headers(request_parts.headers)

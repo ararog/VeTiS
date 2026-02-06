@@ -24,4 +24,5 @@ vetis = { version = "0.1.4-beta.1", path = "../../vetis", features = [
   "tokio-rt",
   "tokio-rust-tls",
   "static-files",
+  "reverse-proxy"
 ], default-features = false }

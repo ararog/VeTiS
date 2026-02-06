@@ -2,10 +2,11 @@ use hyper::StatusCode;
 use vetis::{
     Vetis,
     config::{
-        ListenerConfig, Protocol, SecurityConfig, ServerConfig, StaticPathConfig, VirtualHostConfig,
+        ListenerConfig, Protocol, ProxyPathConfig, SecurityConfig, ServerConfig, StaticPathConfig,
+        VirtualHostConfig,
     },
     server::{
-        path::{HandlerPath, StaticPath},
+        path::{HandlerPath, ProxyPath, StaticPath},
         virtual_host::{VirtualHost, handler_fn},
     },
 };
@@ -71,6 +72,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     localhost_virtual_host.add_path(health_path);
+
+    let proxy_path = ProxyPathConfig::builder()
+        .uri("/proxy")
+        .target("http://localhost:5230")
+        .build()?;
+
+    localhost_virtual_host.add_path(ProxyPath::new(proxy_path));
 
     let images_path = StaticPathConfig::builder()
         .uri("/images")

@@ -208,16 +208,15 @@ impl VirtualHost {
 
         let Some(path) = matches else {
             return Box::pin(async move {
-                // TODO: Do not return a response, but rather propagate the error
-                Ok(Response::builder()
-                    .status(http::StatusCode::NOT_FOUND)
-                    .text("Not Found"))
+                self.serve_status_page(http::StatusCode::NOT_FOUND.as_u16())
+                    .await
             });
         };
 
         let target_path = uri_path
             .strip_prefix(path.uri())
-            .unwrap_or(&uri_path);
+            .unwrap_or(&uri_path)
+            .to_string();
 
         let result = path.handle(request, Arc::from(target_path));
 
@@ -225,12 +224,20 @@ impl VirtualHost {
             match result.await {
                 Ok(response) => Ok(response),
                 Err(error) => {
-                    if let VetisError::VirtualHost(VirtualHostError::InvalidPath(ref error)) = error
-                    {
-                        log::error!("Invalid path: {}", error);
-                        return self
-                            .serve_status_page(http::StatusCode::NOT_FOUND.as_u16())
-                            .await;
+                    match error {
+                        VetisError::VirtualHost(VirtualHostError::InvalidPath(ref error)) => {
+                            log::error!("Invalid path: {}", error);
+                            return self
+                                .serve_status_page(http::StatusCode::NOT_FOUND.as_u16())
+                                .await;
+                        }
+                        VetisError::VirtualHost(VirtualHostError::Proxy(ref error)) => {
+                            log::error!("Proxy error: {}", error);
+                            return self
+                                .serve_status_page(http::StatusCode::BAD_GATEWAY.as_u16())
+                                .await;
+                        }
+                        _ => {}
                     }
 
                     Err(error)
