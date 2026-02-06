@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use hyper::StatusCode;
 use vetis::{
     Vetis,
@@ -40,6 +38,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .hostname("localhost")
         .port(8443)
         .security(security_config)
+        .status_pages(maplit::hashmap! {
+            404 => "/home/rogerio/Downloads/404.html".to_string(),
+            500 => "/home/rogerio/Downloads/500.html".to_string(),
+        })
         .build()?;
 
     let mut localhost_virtual_host = VirtualHost::new(localhost_config);
@@ -75,9 +77,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .directory("/home/rogerio/Downloads")
         .extensions("\\.(jpg|png|gif|html)$")
         .index_files(vec!["index.html".to_string()])
-        .status_pages(maplit::hashmap! {
-            404 => "404.html".to_string()
-        })
         .build()?;
 
     localhost_virtual_host.add_path(StaticPath::new(images_path));

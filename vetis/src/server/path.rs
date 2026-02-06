@@ -9,23 +9,22 @@ use deboa::{client::conn::pool::HttpConnectionPool, request::DeboaRequest, Clien
 #[cfg(feature = "reverse-proxy")]
 use std::sync::OnceLock;
 
-#[cfg(feature = "static-files")]
-use crate::{config::StaticPathConfig, VetisBodyExt, VetisResponseBody};
-#[cfg(feature = "static-files")]
-use serde::Deserialize;
 #[cfg(all(feature = "static-files", feature = "smol-rt"))]
 use smol::fs::File;
-#[cfg(feature = "static-files")]
-use std::path::PathBuf;
 #[cfg(all(feature = "static-files", feature = "tokio-rt"))]
 use tokio::fs::File;
+
+#[cfg(feature = "static-files")]
+use crate::{config::StaticPathConfig, VetisBodyExt};
+#[cfg(feature = "static-files")]
+use std::path::PathBuf;
 
 use std::sync::Arc;
 
 use crate::{
     errors::{VetisError, VirtualHostError},
     server::virtual_host::BoxedHandlerClosure,
-    Request, Response,
+    Request, Response, VetisBody,
 };
 
 #[cfg(feature = "reverse-proxy")]
@@ -141,7 +140,6 @@ impl Path for HandlerPath {
 }
 
 #[cfg(feature = "static-files")]
-#[derive(Deserialize)]
 pub struct StaticPath {
     config: StaticPathConfig,
 }
@@ -152,12 +150,12 @@ impl StaticPath {
         StaticPath { config }
     }
 
-    async fn serve_file(&self, file: PathBuf) -> Result<Response, VetisError> {
+    pub async fn serve_file(&self, file: PathBuf) -> Result<Response, VetisError> {
         let result = File::open(file).await;
         if let Ok(data) = result {
             return Ok(Response::builder()
                 .status(http::StatusCode::OK)
-                .body(VetisResponseBody::body_from_file(data)));
+                .body(VetisBody::body_from_file(data)));
         }
 
         Err(VetisError::VirtualHost(VirtualHostError::InvalidPath("File not found".to_string())))
@@ -182,33 +180,9 @@ impl StaticPath {
             }
         }
 
-        self.serve_status_page(404)
-            .await
-    }
-
-    async fn serve_status_page(&self, status: u16) -> Result<Response, VetisError> {
-        let not_found_response = Response::builder()
-            .status(http::StatusCode::from_u16(status).unwrap())
-            .text("Not found");
-
-        if let Some(status_pages) = &self
-            .config
-            .status_pages()
-        {
-            if let Some(page) = status_pages.get(&status) {
-                let file = PathBuf::from(
-                    self.config
-                        .directory(),
-                )
-                .join(page);
-                if file.exists() {
-                    return self
-                        .serve_file(file)
-                        .await;
-                }
-            }
-        }
-        Ok(not_found_response)
+        Err(VetisError::VirtualHost(VirtualHostError::InvalidPath(
+            "Index file not found".to_string(),
+        )))
     }
 }
 

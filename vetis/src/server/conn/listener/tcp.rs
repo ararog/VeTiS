@@ -50,7 +50,7 @@ use crate::{
         http::static_response,
         tls::TlsFactory,
     },
-    VetisResponseBody, VetisRwLock, VetisVirtualHosts,
+    VetisBody, VetisRwLock, VetisVirtualHosts,
 };
 
 #[cfg(feature = "tokio-rt")]
@@ -267,7 +267,7 @@ async fn process_request(
     virtual_hosts: VetisVirtualHosts,
     port: Arc<u16>,
     _client_addr: SocketAddr,
-) -> Result<http::Response<VetisResponseBody>, VetisError> {
+) -> Result<http::Response<VetisBody>, VetisError> {
     let host = req
         .headers()
         .get(header::HOST);
@@ -337,7 +337,7 @@ async fn process_request(
             }
 
             // TODO: Log request and its response status code
-            Ok::<http::Response<VetisResponseBody>, VetisError>(response)
+            Ok::<http::Response<VetisBody>, VetisError>(response)
         } else {
             error!("Virtual host not found: {}", host);
             let response =

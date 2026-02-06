@@ -732,8 +732,6 @@ pub struct StaticPathConfigBuilder {
     extensions: String,
     directory: String,
     index_files: Option<Vec<String>>,
-    // TODO: Finish removal of status pages from here, move to virtual host config
-    status_pages: Option<HashMap<u16, String>>,
 }
 
 #[cfg(feature = "static-files")]
@@ -755,11 +753,6 @@ impl StaticPathConfigBuilder {
 
     pub fn index_files(mut self, index_files: Vec<String>) -> Self {
         self.index_files = Some(index_files);
-        self
-    }
-
-    pub fn status_pages(mut self, status_pages: HashMap<u16, String>) -> Self {
-        self.status_pages = Some(status_pages);
         self
     }
 
@@ -791,7 +784,6 @@ impl StaticPathConfigBuilder {
             extensions: self.extensions,
             directory: self.directory,
             index_files: self.index_files,
-            status_pages: self.status_pages,
         })
     }
 }
@@ -803,7 +795,6 @@ pub struct StaticPathConfig {
     extensions: String,
     directory: String,
     index_files: Option<Vec<String>>,
-    status_pages: Option<HashMap<u16, String>>,
     // TODO: Add basicauth config
 }
 
@@ -815,7 +806,6 @@ impl StaticPathConfig {
             extensions: ".html".to_string(),
             directory: "./test".to_string(),
             index_files: None,
-            status_pages: None,
         }
     }
 
@@ -833,10 +823,6 @@ impl StaticPathConfig {
 
     pub fn index_files(&self) -> &Option<Vec<String>> {
         &self.index_files
-    }
-
-    pub fn status_pages(&self) -> &Option<HashMap<u16, String>> {
-        &self.status_pages
     }
 }
 

@@ -21,17 +21,22 @@
 ///     Ok(response)
 /// }));
 /// ```
-use std::{future::Future, pin::Pin};
+use std::{future::Future, path::PathBuf, pin::Pin};
 
 use radix_trie::Trie;
 use std::sync::Arc;
 
 use crate::{
     config::VirtualHostConfig,
-    errors::VetisError,
+    errors::{VetisError, VirtualHostError},
     server::path::{HostPath, Path},
-    Request, Response,
+    Request, Response, VetisBody, VetisBodyExt,
 };
+
+#[cfg(all(feature = "static-files", feature = "smol-rt"))]
+use smol::fs::File;
+#[cfg(all(feature = "static-files", feature = "tokio-rt"))]
+use tokio::fs::File;
 
 #[cfg(feature = "static-files")]
 use crate::server::path::StaticPath;
@@ -164,6 +169,30 @@ impl VirtualHost {
             .is_some()
     }
 
+    pub async fn serve_status_page(&self, status: u16) -> Result<Response, VetisError> {
+        let not_found_response = Response::builder()
+            .status(http::StatusCode::from_u16(status).unwrap())
+            .text("Not found");
+
+        if let Some(status_pages) = &self
+            .config
+            .status_pages()
+        {
+            if let Some(page) = status_pages.get(&status) {
+                let file = PathBuf::from(page);
+                if file.exists() {
+                    let result = File::open(file).await;
+                    if let Ok(data) = result {
+                        return Ok(Response::builder()
+                            .status(http::StatusCode::OK)
+                            .body(VetisBody::body_from_file(data)));
+                    }
+                }
+            }
+        }
+        Ok(not_found_response)
+    }
+
     pub fn route(
         &self,
         request: Request,
@@ -190,7 +219,23 @@ impl VirtualHost {
             .strip_prefix(path.uri())
             .unwrap_or(&uri_path);
 
-        // TODO: Is proxy path a special case to be handled here?
-        path.handle(request, Arc::from(target_path))
+        let result = path.handle(request, Arc::from(target_path));
+
+        Box::pin(async move {
+            match result.await {
+                Ok(response) => Ok(response),
+                Err(error) => {
+                    if let VetisError::VirtualHost(VirtualHostError::InvalidPath(ref error)) = error
+                    {
+                        log::error!("Invalid path: {}", error);
+                        return self
+                            .serve_status_page(http::StatusCode::NOT_FOUND.as_u16())
+                            .await;
+                    }
+
+                    Err(error)
+                }
+            }
+        })
     }
 }

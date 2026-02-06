@@ -454,23 +454,28 @@ impl Vetis {
     }
 }
 
-pub type VetisResponseBody = Either<Incoming, BoxBody<Bytes, std::io::Error>>;
+pub type VetisBody = Either<Incoming, BoxBody<Bytes, std::io::Error>>;
 
 pub trait VetisBodyExt {
-    fn body_from_text(text: &str) -> VetisResponseBody;
-    fn body_from_file(file: File) -> VetisResponseBody;
+    fn body_from_text(text: &str) -> VetisBody;
+    fn body_from_file(file: File) -> VetisBody;
 }
 
-impl VetisBodyExt for VetisResponseBody {
-    fn body_from_text(text: &str) -> VetisResponseBody {
+impl VetisBodyExt for VetisBody {
+    fn body_from_text(text: &str) -> VetisBody {
         let all_bytes = Bytes::copy_from_slice(text.as_bytes());
         let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
         let body = StreamBody::new(content);
         Either::Right(body.boxed())
     }
 
-    fn body_from_file(file: File) -> VetisResponseBody {
+    fn body_from_file(file: File) -> VetisBody {
+        #[cfg(feature = "tokio-rt")]
         let content = ReaderStream::new(file).map_ok(Frame::data);
+        #[cfg(feature = "smol-rt")]
+        let content = file
+            .bytes()
+            .map_ok(|data| Frame::data(bytes::Bytes::copy_from_slice(&[data])));
         let body = StreamBody::new(content);
         Either::Right(body.boxed())
     }
@@ -773,7 +778,7 @@ impl ResponseBuilder {
     ///     .text("Hello, World!");
     /// ```    
     pub fn text(self, text: &str) -> Response {
-        self.body(VetisResponseBody::body_from_text(text))
+        self.body(VetisBody::body_from_text(text))
     }
 
     /// Sets the body and creates the final `Response`.
@@ -790,7 +795,7 @@ impl ResponseBuilder {
     /// let response = Response::builder()
     ///     .body(b"Hello, World!");
     /// ```
-    pub fn body(self, body: VetisResponseBody) -> Response {
+    pub fn body(self, body: VetisBody) -> Response {
         let response = http::Response::new(body);
 
         let (mut parts, body) = response.into_parts();
@@ -828,7 +833,7 @@ impl ResponseBuilder {
 /// let inner_response = response.into_inner();
 /// ```
 pub struct Response {
-    pub(crate) inner: http::Response<VetisResponseBody>,
+    pub(crate) inner: http::Response<VetisBody>,
 }
 
 impl Response {
@@ -869,7 +874,7 @@ impl Response {
     ///     .text("Hello");
     /// let inner = response.into_inner();
     /// ```
-    pub fn into_inner(self) -> http::Response<VetisResponseBody> {
+    pub fn into_inner(self) -> http::Response<VetisBody> {
         self.inner
     }
 }

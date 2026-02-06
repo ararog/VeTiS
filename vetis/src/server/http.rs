@@ -1,11 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use bytes::Bytes;
-use futures_lite::stream;
-use futures_util::TryStreamExt;
-use http_body_util::{BodyExt, Either, Full, StreamBody};
-use hyper::body::Frame;
-
 use crate::{
     config::{Protocol, ServerConfig},
     errors::VetisError,
@@ -13,7 +7,7 @@ use crate::{
         conn::listener::{Listener, ServerListener},
         Server,
     },
-    VetisBodyExt, VetisResponseBody, VetisRwLock, VetisVirtualHosts,
+    VetisBody, VetisBodyExt, VetisRwLock, VetisVirtualHosts,
 };
 
 pub struct HttpServer {
@@ -95,12 +89,9 @@ impl Server for HttpServer {
     }
 }
 
-pub fn static_response(
-    status: http::StatusCode,
-    body: String,
-) -> http::Response<VetisResponseBody> {
+pub fn static_response(status: http::StatusCode, body: String) -> http::Response<VetisBody> {
     http::Response::builder()
         .status(status)
-        .body(VetisResponseBody::body_from_text(&body))
+        .body(VetisBody::body_from_text(&body))
         .unwrap()
 }
