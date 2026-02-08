@@ -142,8 +142,10 @@ compile_error!("Only one runtime feature can be enabled at a time.");
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::Bytes;
-use http_body_util::{Either, Full};
-use hyper::body::Incoming;
+use cfg_if::cfg_if;
+use futures_util::{stream, TryStreamExt};
+use http_body_util::{combinators::BoxBody, BodyExt, Either, Full, StreamBody};
+use hyper::body::{Frame, Incoming};
 
 use log::{error, info};
 
@@ -155,17 +157,23 @@ use futures_lite::prelude::*;
 use signal_hook::low_level;
 
 #[cfg(feature = "smol-rt")]
+use smol::fs::File;
+#[cfg(feature = "smol-rt")]
 use smol::lock::RwLock;
 
 #[cfg(feature = "tokio-rt")]
+use tokio::fs::File;
+#[cfg(feature = "tokio-rt")]
 use tokio::sync::RwLock;
+#[cfg(feature = "tokio-rt")]
+use tokio_util::io::ReaderStream;
 
 pub(crate) type VetisRwLock<T> = RwLock<T>;
 
 pub(crate) type VetisVirtualHosts = Arc<VetisRwLock<HashMap<(Arc<str>, u16), VirtualHost>>>;
 
 use crate::{
-    config::ServerConfig,
+    config::{Protocol, ServerConfig},
     errors::{VetisError, VirtualHostError},
     server::{virtual_host::VirtualHost, Server},
 };
@@ -175,8 +183,21 @@ pub mod errors;
 mod rt;
 pub mod server;
 mod tests;
+pub mod utils;
 
 pub static CONFIG: &str = "vetis.toml";
+
+pub(crate) const fn default_protocol() -> Protocol {
+    cfg_if::cfg_if! {
+        if #[cfg(feature="http1")] {
+            Protocol::Http1
+        } else if #[cfg(feature="http2")] {
+            Protocol::Http2
+        } else {
+            Protocol::Http3
+        }
+    }
+}
 
 /// Main server instance that manages virtual hosts and listeners.
 ///
@@ -447,6 +468,33 @@ impl Vetis {
     }
 }
 
+pub type VetisBody = Either<Incoming, BoxBody<Bytes, std::io::Error>>;
+
+pub trait VetisBodyExt {
+    fn body_from_text(text: &str) -> VetisBody;
+    fn body_from_file(file: File) -> VetisBody;
+}
+
+impl VetisBodyExt for VetisBody {
+    fn body_from_text(text: &str) -> VetisBody {
+        let all_bytes = Bytes::copy_from_slice(text.as_bytes());
+        let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
+        let body = StreamBody::new(content);
+        Either::Right(BodyExt::boxed(body))
+    }
+
+    fn body_from_file(file: File) -> VetisBody {
+        #[cfg(feature = "tokio-rt")]
+        let content = ReaderStream::new(file).map_ok(Frame::data);
+        #[cfg(feature = "smol-rt")]
+        let content = file
+            .bytes()
+            .map_ok(|data| Frame::data(bytes::Bytes::copy_from_slice(&[data])));
+        let body = StreamBody::new(content);
+        Either::Right(BodyExt::boxed(body))
+    }
+}
+
 /// HTTP request wrapper supporting multiple protocols.
 ///
 /// The `Request` struct provides a unified interface for handling HTTP requests
@@ -532,6 +580,29 @@ impl Request {
             Some(req) => req.headers(),
             None => match &self.inner_quic {
                 Some(req) => req.headers(),
+                None => panic!("No request"),
+            },
+        }
+    }
+
+    /// Returns the request headers (mutable).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use vetis::Request;
+    ///
+    /// async fn handler(request: Request) -> Result<vetis::Response, vetis::VetisError> {
+    ///     let content_type = request.headers().get("content-type");
+    ///     let user_agent = request.headers().get("user-agent");
+    ///     Ok(/* response */)
+    /// }
+    /// ```
+    pub fn headers_mut(&mut self) -> &mut http::HeaderMap {
+        match &mut self.inner_http {
+            Some(req) => req.headers_mut(),
+            None => match &mut self.inner_quic {
+                Some(req) => req.headers_mut(),
                 None => panic!("No request"),
             },
         }
@@ -721,10 +792,7 @@ impl ResponseBuilder {
     ///     .text("Hello, World!");
     /// ```    
     pub fn text(self, text: &str) -> Response {
-        self.body(Either::Right(Full::new(Bytes::from(
-            text.as_bytes()
-                .to_vec(),
-        ))))
+        self.body(VetisBody::body_from_text(text))
     }
 
     /// Sets the body and creates the final `Response`.
@@ -741,7 +809,7 @@ impl ResponseBuilder {
     /// let response = Response::builder()
     ///     .body(b"Hello, World!");
     /// ```
-    pub fn body(self, body: Either<Incoming, Full<Bytes>>) -> Response {
+    pub fn body(self, body: VetisBody) -> Response {
         let response = http::Response::new(body);
 
         let (mut parts, body) = response.into_parts();
@@ -779,7 +847,7 @@ impl ResponseBuilder {
 /// let inner_response = response.into_inner();
 /// ```
 pub struct Response {
-    pub(crate) inner: http::Response<Either<Incoming, Full<Bytes>>>,
+    pub(crate) inner: http::Response<VetisBody>,
 }
 
 impl Response {
@@ -820,7 +888,7 @@ impl Response {
     ///     .text("Hello");
     /// let inner = response.into_inner();
     /// ```
-    pub fn into_inner(self) -> http::Response<Either<Incoming, Full<Bytes>>> {
+    pub fn into_inner(self) -> http::Response<VetisBody> {
         self.inner
     }
 }

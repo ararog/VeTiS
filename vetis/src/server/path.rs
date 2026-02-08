@@ -1,3 +1,5 @@
+//! Path module for handling different types of paths in the server
+
 use std::{future::Future, pin::Pin};
 
 #[cfg(feature = "reverse-proxy")]
@@ -7,23 +9,28 @@ use deboa::{client::conn::pool::HttpConnectionPool, request::DeboaRequest, Clien
 #[cfg(feature = "reverse-proxy")]
 use std::sync::OnceLock;
 
+#[cfg(all(feature = "static-files", feature = "smol-rt"))]
+use futures_lite::AsyncSeekExt;
+#[cfg(all(feature = "static-files", feature = "smol-rt"))]
+use smol::fs::File;
+#[cfg(all(feature = "static-files", feature = "tokio-rt"))]
+use tokio::{fs::File, io::AsyncSeekExt};
+
 #[cfg(feature = "static-files")]
-use crate::config::StaticPathConfig;
+use crate::{
+    config::StaticPathConfig, errors::FileError, server::http::static_response, VetisBodyExt,
+};
 #[cfg(feature = "static-files")]
-use bytes::Bytes;
+use http::{HeaderMap, HeaderValue};
 #[cfg(feature = "static-files")]
-use http_body_util::Full;
-#[cfg(feature = "static-files")]
-use serde::Deserialize;
-#[cfg(feature = "static-files")]
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 use std::sync::Arc;
 
 use crate::{
-    errors::{VetisError, VirtualHostError},
+    errors::{HandlerError, VetisError, VirtualHostError},
     server::virtual_host::BoxedHandlerClosure,
-    Request, Response,
+    Request, Response, VetisBody,
 };
 
 #[cfg(feature = "reverse-proxy")]
@@ -34,7 +41,7 @@ pub trait Path {
     fn handle(
         &self,
         request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>>;
 }
 
@@ -60,7 +67,7 @@ impl Path for HostPath {
     fn handle(
         &self,
         request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         match self {
             HostPath::Handler(handler) => handler.handle(request, uri),
@@ -73,13 +80,13 @@ impl Path for HostPath {
 }
 
 pub struct HandlerPathBuilder {
-    uri: Arc<str>,
+    uri: Arc<String>,
     handler: Option<BoxedHandlerClosure>,
 }
 
 impl HandlerPathBuilder {
     pub fn uri(mut self, uri: &str) -> Self {
-        self.uri = Arc::from(uri);
+        self.uri = Arc::from(uri.to_string());
         self
     }
 
@@ -90,18 +97,18 @@ impl HandlerPathBuilder {
 
     pub fn build(self) -> Result<HostPath, VetisError> {
         if self.uri.is_empty() {
-            return Err(VetisError::VirtualHost(VirtualHostError::InvalidPath(
+            return Err(VetisError::VirtualHost(VirtualHostError::Handler(HandlerError::Uri(
                 "URI cannot be empty".to_string(),
-            )));
+            ))));
         }
 
         if self
             .handler
             .is_none()
         {
-            return Err(VetisError::VirtualHost(VirtualHostError::InvalidPath(
+            return Err(VetisError::VirtualHost(VirtualHostError::Handler(HandlerError::Handler(
                 "Handler cannot be empty".to_string(),
-            )));
+            ))));
         }
 
         Ok(HostPath::Handler(HandlerPath {
@@ -114,13 +121,13 @@ impl HandlerPathBuilder {
 }
 
 pub struct HandlerPath {
-    uri: Arc<str>,
+    uri: Arc<String>,
     handler: BoxedHandlerClosure,
 }
 
 impl HandlerPath {
     pub fn builder() -> HandlerPathBuilder {
-        HandlerPathBuilder { uri: Arc::from(""), handler: None }
+        HandlerPathBuilder { uri: Arc::from("/".to_string()), handler: None }
     }
 }
 
@@ -132,14 +139,13 @@ impl Path for HandlerPath {
     fn handle(
         &self,
         request: Request,
-        _uri: Arc<str>,
+        _uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         (self.handler)(request)
     }
 }
 
 #[cfg(feature = "static-files")]
-#[derive(Deserialize)]
 pub struct StaticPath {
     config: StaticPathConfig,
 }
@@ -150,18 +156,73 @@ impl StaticPath {
         StaticPath { config }
     }
 
-    fn serve_file(&self, file: PathBuf) -> Result<Response, VetisError> {
-        let result = fs::read(file);
-        if let Ok(data) = result {
+    pub async fn serve_file(
+        &self,
+        file: PathBuf,
+        range: Option<&str>,
+    ) -> Result<Response, VetisError> {
+        let result = File::open(file).await;
+        if let Ok(mut data) = result {
+            let filesize = match data
+                .metadata()
+                .await
+            {
+                Ok(metadata) => metadata.len(),
+                Err(_) => 0u64,
+            };
+
+            if let Some(range) = range {
+                let (unit, range) = range
+                    .split_once("=")
+                    .unwrap();
+                if unit != "bytes" {
+                    return Err(VetisError::VirtualHost(VirtualHostError::File(
+                        FileError::InvalidRange,
+                    )));
+                }
+
+                let (start, end) = range
+                    .split_once("-")
+                    .unwrap();
+                let start = start
+                    .parse::<u64>()
+                    .unwrap();
+                let end = end
+                    .parse::<u64>()
+                    .unwrap();
+                if start > end || start >= filesize {
+                    return Ok(Response::builder()
+                        .status(http::StatusCode::RANGE_NOT_SATISFIABLE)
+                        .body(VetisBody::body_from_text("")));
+                } else if start < end
+                    && end < filesize
+                    && data
+                        .seek(std::io::SeekFrom::Start(start))
+                        .await
+                        .is_ok()
+                {
+                    return Ok(Response::builder()
+                        .status(http::StatusCode::PARTIAL_CONTENT)
+                        .body(VetisBody::body_from_file(data)));
+                }
+            }
+
             return Ok(Response::builder()
                 .status(http::StatusCode::OK)
-                .body(http_body_util::Either::Right(Full::new(Bytes::from(data)))));
+                .header(
+                    http::header::ACCEPT_RANGES,
+                    "bytes"
+                        .parse()
+                        .unwrap(),
+                )
+                .header(http::header::CONTENT_LENGTH, HeaderValue::from(filesize))
+                .body(VetisBody::body_from_file(data)));
         }
 
-        self.serve_status_page(404)
+        Err(VetisError::VirtualHost(VirtualHostError::File(FileError::NotFound)))
     }
 
-    fn serve_index_file(&self, directory: PathBuf) -> Result<Response, VetisError> {
+    async fn serve_index_file(&self, directory: PathBuf) -> Result<Response, VetisError> {
         if let Some(index_files) = self
             .config
             .index_files()
@@ -174,34 +235,70 @@ impl StaticPath {
                         .exists()
                 })
             {
-                return self.serve_file(directory.join(index_file));
+                return self
+                    .serve_file(directory.join(index_file), None)
+                    .await;
             }
         }
 
-        self.serve_status_page(404)
+        Err(VetisError::VirtualHost(VirtualHostError::File(FileError::NotFound)))
     }
 
-    fn serve_status_page(&self, status: u16) -> Result<Response, VetisError> {
-        let not_found_response = Response::builder()
-            .status(http::StatusCode::from_u16(status).unwrap())
-            .text("Not found");
-
-        if let Some(status_pages) = &self
-            .config
-            .status_pages()
-        {
-            if let Some(page) = status_pages.get(&status) {
-                let file = PathBuf::from(
-                    self.config
-                        .directory(),
-                )
-                .join(page);
-                if file.exists() {
-                    return self.serve_file(file);
+    fn serve_metadata(&self, file: PathBuf) -> Result<Response, VetisError> {
+        if let Ok(metadata) = file.metadata() {
+            let len = metadata.len();
+            let mut headers = HeaderMap::new();
+            match len
+                .to_string()
+                .parse()
+            {
+                Ok(len) => {
+                    headers.insert(http::header::CONTENT_LENGTH, len);
+                }
+                Err(_) => todo!(),
+            }
+            let last_modified = metadata.modified();
+            match last_modified {
+                Ok(date) => {
+                    let date = crate::utils::date::format_date(date);
+                    headers.insert(
+                        http::header::LAST_MODIFIED,
+                        date.parse()
+                            .unwrap(),
+                    );
+                }
+                Err(_) => todo!(),
+            }
+            match file.file_name() {
+                Some(filename) => {
+                    let mime_type = minimime::lookup_by_filename(
+                        filename
+                            .to_str()
+                            .unwrap(),
+                    );
+                    if let Some(mime_type) = mime_type {
+                        headers.insert(
+                            http::header::CONTENT_TYPE,
+                            HeaderValue::from_str(
+                                mime_type
+                                    .content_type
+                                    .as_str(),
+                            )
+                            .unwrap(),
+                        );
+                    }
+                }
+                None => {
+                    todo!()
                 }
             }
+
+            Ok(Response {
+                inner: static_response(http::StatusCode::OK, Some(headers), String::new()),
+            })
+        } else {
+            Err(VetisError::VirtualHost(VirtualHostError::File(FileError::NotFound)))
         }
-        Ok(not_found_response)
     }
 }
 
@@ -220,8 +317,8 @@ impl Path for StaticPath {
 
     fn handle(
         &self,
-        _request: Request,
-        uri: Arc<str>,
+        request: Request,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
         Box::pin(async move {
             let ext_regex = regex::Regex::new(
@@ -242,14 +339,40 @@ impl Path for StaticPath {
                 // check file by mimetype
                 if let Ok(ext_regex) = ext_regex {
                     if !ext_regex.is_match(uri.as_ref()) {
-                        return self.serve_index_file(directory);
+                        return self
+                            .serve_index_file(directory)
+                            .await;
                     }
                 }
             } else if file.is_dir() {
-                return self.serve_index_file(file);
+                return self
+                    .serve_index_file(file)
+                    .await;
             }
 
-            self.serve_file(file)
+            if request.method() == http::Method::HEAD {
+                return self.serve_metadata(file);
+            }
+
+            let range = if request
+                .headers()
+                .contains_key(http::header::RANGE)
+            {
+                let value = request
+                    .headers()
+                    .get(http::header::RANGE);
+                Some(
+                    value
+                        .unwrap()
+                        .to_str()
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+
+            self.serve_file(file, range)
+                .await
         })
     }
 }
@@ -282,22 +405,14 @@ impl Path for ProxyPath {
     fn handle(
         &self,
         request: Request,
-        uri: Arc<str>,
+        uri: Arc<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
-        let (request_parts, request_body) = request.into_http_parts();
-
-        let target_path = request_parts
-            .uri
-            .path()
-            .strip_prefix(uri.as_ref())
-            .unwrap_or("");
-
-        let target_path = Arc::<str>::from(target_path);
+        let (request_parts, _request_body) = request.into_http_parts();
 
         let target = self.config.target();
 
         Box::pin(async move {
-            let target_url = format!("{}{}", target, target_path);
+            let target_url = format!("{}{}", target, uri);
             let deboa_request = DeboaRequest::at(target_url, request_parts.method)
                 .map_err(|e| VetisError::VirtualHost(VirtualHostError::Proxy(e.to_string())))?
                 .headers(request_parts.headers)
@@ -310,6 +425,7 @@ impl Path for ProxyPath {
                     .build()
             });
 
+            // TODO: Check errors and handle them properly by returning a proper response 500, 503 or 504
             let response = client
                 .execute(deboa_request)
                 .await

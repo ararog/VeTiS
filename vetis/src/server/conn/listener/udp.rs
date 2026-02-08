@@ -11,6 +11,7 @@ use h3_quinn::{
     quinn::{self, crypto::rustls::QuicServerConfig},
     Connection as QuinnConnection,
 };
+use http::header;
 use http_body_util::{BodyExt, Full};
 
 use log::{error, info};
@@ -21,6 +22,7 @@ use crate::{
     errors::{StartError::Tls, VetisError},
     server::{
         conn::listener::{Listener, ListenerResult},
+        http::static_response,
         tls::TlsFactory,
     },
     VetisRwLock, VetisVirtualHosts,
@@ -70,12 +72,12 @@ impl Listener for UdpListener {
 
             if let Some(tls_config) = tls_config {
                 let quic_config = QuicServerConfig::try_from(tls_config)
-                    .map_err(|e| VetisError::Start(Tls(e)))?;
+                    .map_err(|e| VetisError::Start(Tls(e.to_string())))?;
 
                 let server_config = quinn::ServerConfig::with_crypto(Arc::new(quic_config));
 
                 let endpoint = quinn::Endpoint::server(server_config, addr)
-                    .map_err(|e| VetisError::Bind(e))?;
+                    .map_err(|e| VetisError::Bind(e.to_string()))?;
 
                 let server_task = self
                     .handle_connections(
@@ -116,6 +118,7 @@ impl UdpListener {
                 .await
             {
                 let virtual_hosts = virtual_hosts.clone();
+                let addr = new_conn.remote_address();
                 spawn_worker(async move {
                     match new_conn.await {
                         Ok(conn) => {
@@ -130,7 +133,16 @@ impl UdpListener {
                                     .await
                                 {
                                     Ok(Some(resolver)) => {
-                                        handle_http_request(port, resolver, virtual_hosts.clone());
+                                        let result = handle_http_request(
+                                            port,
+                                            resolver,
+                                            virtual_hosts.clone(),
+                                            addr,
+                                        );
+
+                                        if let Err(err) = result {
+                                            error!("Error handling HTTP request: {:?}", err);
+                                        }
                                     }
                                     Ok(None) => {
                                         break;
@@ -162,6 +174,7 @@ fn handle_http_request(
     port: u16,
     resolver: RequestResolver<QuinnConnection, Bytes>,
     virtual_hosts: VetisVirtualHosts,
+    client_addr: SocketAddr,
 ) -> Result<(), VetisError> {
     let virtual_hosts = virtual_hosts.clone();
     spawn_worker(async move {
@@ -206,7 +219,7 @@ fn handle_http_request(
                     .read()
                     .await;
 
-                let virtual_host = virtual_host.get(&(host.host(), port));
+                let virtual_host = virtual_host.get(&(host.host().into(), port));
 
                 let response = if let Some(virtual_host) = virtual_host {
                     let request = crate::Request::from_quic(request);
@@ -217,12 +230,13 @@ fn handle_http_request(
 
                     let response = if let Err(err) = vetis_response {
                         error!("Error executing request: {:?}", err);
-                        Response::builder()
-                            .status(500)
-                            .body(Full::new(Bytes::from_static(b"Internal server error")))
-                            .unwrap()
+                        static_response(
+                            http::StatusCode::INTERNAL_SERVER_ERROR,
+                            None,
+                            "Internal server error".to_string(),
+                        )
                     } else {
-                        let response = vetis_response
+                        let mut response = vetis_response
                             .unwrap()
                             .into_inner();
 
@@ -232,14 +246,16 @@ fn handle_http_request(
 
                         if let Some(default_headers) = default_headers {
                             for (key, value) in default_headers {
-                                let header_name = header::HeaderName::from_bytes(key.as_bytes());
+                                let header_name =
+                                    http::header::HeaderName::from_bytes(key.as_bytes());
                                 if header_name.is_err() {
                                     error!("Invalid header name: {}", key);
                                     continue;
                                 }
                                 let header_name = header_name.unwrap();
 
-                                let header_value = header::HeaderValue::from_str(value.as_str());
+                                let header_value =
+                                    http::header::HeaderValue::from_str(value.as_str());
                                 if header_value.is_err() {
                                     error!("Invalid header value: {}", value);
                                     continue;
@@ -251,25 +267,29 @@ fn handle_http_request(
                                     .insert(header_name, header_value);
                             }
                         }
+
+                        response
                     };
 
                     Ok::<_, VetisError>(response)
                 } else {
                     error!("Virtual host not found: {}", host);
-                    let response = Response::builder()
-                        .status(404)
-                        .body(Full::new(Bytes::from_static(b"Virtual host not found")))
-                        .unwrap();
+                    let response = static_response(
+                        http::StatusCode::NOT_FOUND,
+                        None,
+                        "Virtual host not found".to_string(),
+                    );
                     Ok(response)
                 };
 
                 response
             } else {
                 error!("Host not found in request");
-                let response = Response::builder()
-                    .status(400)
-                    .body(Full::new(Bytes::from_static(b"Host not found in request")))
-                    .unwrap();
+                let response = static_response(
+                    http::StatusCode::BAD_REQUEST,
+                    None,
+                    "Host not found in request".to_string(),
+                );
                 Ok(response)
             };
 

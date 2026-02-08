@@ -21,17 +21,28 @@
 ///     Ok(response)
 /// }));
 /// ```
-use std::{future::Future, pin::Pin};
+use std::{future::Future, path::PathBuf, pin::Pin};
 
 use radix_trie::Trie;
 use std::sync::Arc;
 
 use crate::{
     config::VirtualHostConfig,
-    errors::VetisError,
+    errors::{VetisError, VirtualHostError},
     server::path::{HostPath, Path},
-    Request, Response,
+    Request, Response, VetisBody, VetisBodyExt,
 };
+
+#[cfg(all(feature = "static-files", feature = "smol-rt"))]
+use smol::fs::File;
+#[cfg(all(feature = "static-files", feature = "tokio-rt"))]
+use tokio::fs::File;
+
+#[cfg(feature = "static-files")]
+use crate::{errors::FileError, server::path::StaticPath};
+
+#[cfg(feature = "reverse-proxy")]
+use crate::server::path::ProxyPath;
 
 /// Type alias for boxed handler closures.
 ///
@@ -107,8 +118,24 @@ pub struct VirtualHost {
 }
 
 impl VirtualHost {
-    pub fn new(config: VirtualHostConfig) -> Self {
-        Self { config, paths: Trie::new() }
+    pub fn new(host_config: VirtualHostConfig) -> Self {
+        let mut host = Self { config: host_config.clone(), paths: Trie::new() };
+
+        #[cfg(feature = "static-files")]
+        if let Some(static_paths) = &host_config.static_paths() {
+            for static_path in static_paths {
+                host.add_path(StaticPath::new(static_path.clone()));
+            }
+        }
+
+        #[cfg(feature = "reverse-proxy")]
+        if let Some(proxy_paths) = &host_config.proxy_paths() {
+            for proxy_path in proxy_paths {
+                host.add_path(ProxyPath::new(proxy_path.clone()));
+            }
+        }
+
+        host
     }
 
     pub fn add_path<P>(&mut self, path: P)
@@ -142,14 +169,50 @@ impl VirtualHost {
             .is_some()
     }
 
+    pub async fn serve_status_page(&self, status: u16) -> Result<Response, VetisError> {
+        let status_code = http::StatusCode::from_u16(status).unwrap();
+        let static_status_response = Response::builder()
+            .status(status_code)
+            .text(
+                status_code
+                    .canonical_reason()
+                    .unwrap_or("Unknown status code"),
+            );
+
+        if let Some(status_pages) = &self
+            .config
+            .status_pages()
+        {
+            if let Some(page) = status_pages.get(&status) {
+                let file = PathBuf::from(page);
+                if file.exists() {
+                    let result = File::open(file).await;
+                    if let Ok(data) = result {
+                        return Ok(Response::builder()
+                            .status(http::StatusCode::OK)
+                            .body(VetisBody::body_from_file(data)));
+                    }
+                }
+            }
+        }
+        Ok(static_status_response)
+    }
+
     pub fn route(
         &self,
         request: Request,
     ) -> Pin<Box<dyn Future<Output = Result<Response, VetisError>> + Send + '_>> {
-        let uri_path = request
+        let uri_path: String = request
             .uri()
             .path()
-            .to_string();
+            .into();
+
+        if uri_path.starts_with("..") {
+            return Box::pin(async move {
+                self.serve_status_page(http::StatusCode::FORBIDDEN.as_u16())
+                    .await
+            });
+        }
 
         let matches = self
             .paths
@@ -157,16 +220,41 @@ impl VirtualHost {
 
         let Some(path) = matches else {
             return Box::pin(async move {
-                Ok(Response::builder()
-                    .status(http::StatusCode::NOT_FOUND)
-                    .text("Not Found"))
+                self.serve_status_page(http::StatusCode::NOT_FOUND.as_u16())
+                    .await
             });
         };
 
-        let target_path = uri_path
+        let target_path: String = uri_path
             .strip_prefix(path.uri())
-            .unwrap_or(&uri_path);
+            .unwrap_or(&uri_path)
+            .into();
 
-        path.handle(request, Arc::from(target_path))
+        let result = path.handle(request, Arc::from(target_path));
+
+        Box::pin(async move {
+            match result.await {
+                Ok(response) => Ok(response),
+                Err(error) => {
+                    match error {
+                        VetisError::VirtualHost(VirtualHostError::File(FileError::NotFound)) => {
+                            log::error!("Invalid path: {}", error);
+                            return self
+                                .serve_status_page(http::StatusCode::NOT_FOUND.as_u16())
+                                .await;
+                        }
+                        VetisError::VirtualHost(VirtualHostError::Proxy(ref error)) => {
+                            log::error!("Proxy error: {}", error);
+                            return self
+                                .serve_status_page(http::StatusCode::BAD_GATEWAY.as_u16())
+                                .await;
+                        }
+                        _ => {}
+                    }
+
+                    Err(error)
+                }
+            }
+        })
     }
 }

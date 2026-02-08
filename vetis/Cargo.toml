@@ -22,49 +22,55 @@ default = [
 ]
 
 tokio-rt = [
-  "tokio",
-  "rt-gate/tokio-rt",
+  "dep:tokio",
   "hyper-util/tokio",
   "tokio/rt-multi-thread",
   "tokio/net",
   "tokio/signal",
   "peekable/tokio",
+  "rt-gate/tokio-rt",
+  "quinn/runtime-tokio"
 ]
 smol-rt = [
-  "smol",
-  "smol-hyper",
-  "smol-macros",
-  "rt-gate/smol-rt",
+  "dep:smol",
+  "dep:smol-hyper",
+  "dep:smol-macros",
+  "dep:macro_rules_attribute",
   "dep:async-signal",
   "dep:signal-hook",
   "peekable/future",
+  "rt-gate/smol-rt",
+  "quinn/runtime-smol"
 ]
 
 tokio-rust-tls = ["tokio-rustls", "rustls", "rustls-provider"]
 smol-rust-tls = ["futures-rustls", "rustls", "rustls-provider"]
 
-static-files = []
+static-files = ["mime"]
 
 reverse-proxy = ["__deboa_tokio"]
-__deboa_tokio = ["deboa/tokio-rt", "deboa/http1", "deboa/tokio-rust-tls"]
-__deboa_smol = ["deboa/smol-rt", "deboa/http1", "deboa/smol-rust-tls"]
+__deboa_tokio = ["deboa/tokio-rt", "deboa/tokio-rust-tls"]
+__deboa_smol = ["deboa/smol-rt", "deboa/smol-rust-tls"]
 
 rustls-provider = ["__rustls_awc_lc_rs"]
 __rustls_awc_lc_rs = ["futures-rustls/aws-lc-rs"]
 __rustls_ring = ["futures-rustls/ring"]
 __rustls_rustcrypto = ["dep:rustls-rustcrypto"]
 
-http1 = ["hyper/http1", "hyper/server", "hyper-util/server", "hyper-util/http1"]
-http2 = ["hyper/http2", "hyper/server", "hyper-util/server", "hyper-util/http2"]
-http3 = ["hyper/server", "hyper-util/server", "h3", "h3-quinn", "quinn"]
-deboa = ["dep:deboa"]
+http1 = ["hyper/http1", "hyper/server", "hyper-util/server", "hyper-util/http1", "deboa/http1"]
+http2 = ["hyper/http2", "hyper/server", "hyper-util/server", "hyper-util/http2", "deboa/http2"]
+http3 = ["hyper/server", "hyper-util/server", "dep:h3", "dep:h3-quinn", "dep:quinn", "deboa/http3"]
 
 [dependencies]
 async-signal = { version = "0.2.12", optional = true }
 bytes = "1.11.1"
-deboa = { version = "0.1.0-beta.1", default-features = false, optional = true }
+cfg-if = "1.0.4"
+clap = { version = "4.5.57", features = ["derive", "std"], default-features = false}
+deboa = { path = "../../deboa/deboa", default-features = false, optional = true }
+env_logger = "0.11.8"
 futures-lite = "2.6.1"
 futures-rustls = { version = "0.26.0", optional = true }
+futures-util = "0.3.31"
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
 http = "1.3.1"
@@ -72,7 +78,9 @@ http-body-util = { version = "0.1.3" }
 hyper = { version = "1.8.1", default-features = false, optional = true }
 hyper-util = { version = "0.1.20", default-features = false, optional = true }
 log = "0.4.28"
-mime = "0.3.17"
+macro_rules_attribute = { version = "0.2.2", optional = true }
+mime = { version = "0.3.17", optional = true }
+minimime = "1.0.0"
 peekable = { version = "0.4.1", optional = true, default-features = false }
 quinn = { version = "0.11.7", default-features = false, optional = true }
 radix_trie = "0.3.0"
@@ -88,8 +96,10 @@ smol = { version = "2.0.2", optional = true }
 smol-hyper = { version = "0.1.1", optional = true }
 smol-macros = { version = "0.1.1", optional = true }
 thiserror = "2.0.17"
-tokio = { version = "1.49.0", default-features = false, optional = true }
+time = { version = "0.3.41", features = ["formatting"] }
+tokio = { version = "1.38.1", default-features = false, optional = true }
 tokio-rustls = { version = "0.26.0", optional = true }
+tokio-util = "0.7.18"
 toml = "0.9.6"
 url = "2.5.7"
 
