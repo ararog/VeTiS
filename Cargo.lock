@@ -1741,12 +1741,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
-name = "md5"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
-
-[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3434,6 +3428,7 @@ version = "0.1.4-beta.3"
 dependencies = [
  "argon2",
  "async-signal",
+ "base64",
  "bcrypt",
  "bytes",
  "cfg-if",
@@ -3451,7 +3446,6 @@ dependencies = [
  "hyper-util",
  "log",
  "macro_rules_attribute",
- "md5",
  "mime",
  "minimime",
  "peekable",

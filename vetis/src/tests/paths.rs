@@ -95,13 +95,31 @@ mod handler {
 
 #[cfg(feature = "static-files")]
 mod static_files {
+    use std::{collections::HashMap, error::Error};
+
+    use deboa::{cert::Certificate, request};
+    use http::StatusCode;
+
+    #[cfg(feature = "auth")]
+    use crate::config::auth::{Auth, BasicAuthConfig};
+
+    #[cfg(feature = "smol-rt")]
+    use macro_rules_attribute::apply;
+    #[cfg(feature = "smol-rt")]
+    use smol_macros::test;
+
     use crate::{
-        config::StaticPathConfig,
+        config::{
+            ListenerConfig, SecurityConfig, ServerConfig, StaticPathConfig, VirtualHostConfig,
+        },
+        default_protocol,
         errors::{ConfigError, VetisError},
+        server::{path::StaticPath, virtual_host::VirtualHost},
+        tests::{CA_CERT, SERVER_CERT, SERVER_KEY},
     };
 
     #[test]
-    pub fn test_static_path_config() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_static_path_config() -> Result<(), Box<dyn std::error::Error>> {
         let path_config = StaticPathConfig::builder()
             .uri("/test")
             .extensions(".html")
@@ -116,7 +134,7 @@ mod static_files {
     }
 
     #[test]
-    pub fn test_invalid_uri() {
+    fn test_invalid_uri() {
         let some_path = StaticPathConfig::builder()
             .uri("")
             .build();
@@ -129,7 +147,7 @@ mod static_files {
     }
 
     #[test]
-    pub fn test_invalid_extensions() {
+    fn test_invalid_extensions() {
         let some_path = StaticPathConfig::builder()
             .uri("/test")
             .extensions("")
@@ -143,7 +161,7 @@ mod static_files {
     }
 
     #[test]
-    pub fn test_invalid_directory() {
+    fn test_invalid_directory() {
         let some_path = StaticPathConfig::builder()
             .uri("/test")
             .extensions(".html")
@@ -155,6 +173,275 @@ mod static_files {
             some_path.err(),
             Some(VetisError::Config(ConfigError::Path("Directory cannot be empty".into(),)))
         );
+    }
+
+    async fn do_index() -> Result<(), Box<dyn Error>> {
+        let listener = ListenerConfig::builder()
+            .port(9100)
+            .protocol(default_protocol())
+            .interface("0.0.0.0")
+            .build()?;
+
+        let config = ServerConfig::builder()
+            .add_listener(listener)
+            .build()?;
+
+        let security_config = SecurityConfig::builder()
+            .ca_cert_from_bytes(CA_CERT.to_vec())
+            .cert_from_bytes(SERVER_CERT.to_vec())
+            .key_from_bytes(SERVER_KEY.to_vec())
+            .build()?;
+
+        let host_config = VirtualHostConfig::builder()
+            .hostname("localhost")
+            .port(9100)
+            .security(security_config.clone())
+            .build()?;
+
+        let mut virtual_host = VirtualHost::new(host_config);
+        virtual_host.add_path(StaticPath::new(
+            StaticPathConfig::builder()
+                .uri("/")
+                .directory("src/tests/files")
+                .index_files(vec!["index.html".to_string()])
+                .build()?,
+        ));
+
+        let mut server = crate::Vetis::new(config);
+        server
+            .add_virtual_host(virtual_host)
+            .await;
+
+        server
+            .start()
+            .await?;
+
+        let client = deboa::Client::builder()
+            .certificate(Certificate::from_slice(CA_CERT, deboa::cert::ContentEncoding::DER))
+            .build();
+
+        let request = request::get("https://localhost:9100/")?
+            .send_with(&client)
+            .await?;
+
+        assert!(request
+            .text()
+            .await?
+            .contains("Tested!"));
+
+        server
+            .stop()
+            .await?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "tokio-rt")]
+    #[tokio::test]
+    async fn test_index() -> Result<(), Box<dyn Error>> {
+        do_index().await
+    }
+
+    #[cfg(feature = "smol-rt")]
+    #[apply(test!)]
+    async fn test_index() -> Result<(), Box<dyn Error>> {
+        do_index().await
+    }
+
+    async fn do_not_found() -> Result<(), Box<dyn Error>> {
+        let listener = ListenerConfig::builder()
+            .port(9000)
+            .protocol(default_protocol())
+            .interface("0.0.0.0")
+            .build()?;
+
+        let config = ServerConfig::builder()
+            .add_listener(listener)
+            .build()?;
+
+        let security_config = SecurityConfig::builder()
+            .ca_cert_from_bytes(CA_CERT.to_vec())
+            .cert_from_bytes(SERVER_CERT.to_vec())
+            .key_from_bytes(SERVER_KEY.to_vec())
+            .build()?;
+
+        let mut status_pages = HashMap::new();
+        status_pages.insert(404, "src/tests/files/404.html".to_string());
+
+        let host_config = VirtualHostConfig::builder()
+            .hostname("localhost")
+            .port(9000)
+            .security(security_config.clone())
+            .status_pages(status_pages)
+            .build()?;
+
+        let mut virtual_host = VirtualHost::new(host_config);
+        virtual_host.add_path(StaticPath::new(
+            StaticPathConfig::builder()
+                .uri("/")
+                .directory("src/tests/files")
+                .build()?,
+        ));
+
+        let mut server = crate::Vetis::new(config);
+        server
+            .add_virtual_host(virtual_host)
+            .await;
+
+        server
+            .start()
+            .await?;
+
+        let client = deboa::Client::builder()
+            .certificate(Certificate::from_slice(CA_CERT, deboa::cert::ContentEncoding::DER))
+            .build();
+
+        let request = request::get("https://localhost:9000/some/file/here.txt")?
+            .send_with(&client)
+            .await;
+
+        assert_eq!(
+            request.err(),
+            Some(deboa::errors::DeboaError::Response(deboa::errors::ResponseError::Receive {
+                status_code: StatusCode::NOT_FOUND,
+                message: "Could not process request (404 Not Found): ".to_string()
+            }))
+        );
+
+        server
+            .stop()
+            .await?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "tokio-rt")]
+    #[tokio::test]
+    async fn test_not_found() -> Result<(), Box<dyn Error>> {
+        do_not_found().await
+    }
+
+    #[cfg(feature = "smol-rt")]
+    #[apply(test!)]
+    async fn test_not_found() -> Result<(), Box<dyn Error>> {
+        do_not_found().await
+    }
+
+    #[cfg(feature = "auth")]
+    async fn do_basic_auth(
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        let has_auth = username.is_some() && password.is_some();
+
+        let port = if has_auth { 9200 } else { 9201 };
+
+        let listener = ListenerConfig::builder()
+            .port(port)
+            .protocol(default_protocol())
+            .interface("0.0.0.0")
+            .build()?;
+
+        let config = ServerConfig::builder()
+            .add_listener(listener)
+            .build()?;
+
+        let security_config = SecurityConfig::builder()
+            .ca_cert_from_bytes(CA_CERT.to_vec())
+            .cert_from_bytes(SERVER_CERT.to_vec())
+            .key_from_bytes(SERVER_KEY.to_vec())
+            .build()?;
+
+        let host_config = VirtualHostConfig::builder()
+            .hostname("localhost")
+            .port(port)
+            .security(security_config.clone())
+            .build()?;
+
+        let mut virtual_host = VirtualHost::new(host_config);
+        let mut auth_config = BasicAuthConfig::builder()
+            .htpasswd("src/tests/files/.htpasswd".to_string())
+            .build();
+        auth_config.cache_users();
+        virtual_host.add_path(StaticPath::new(
+            StaticPathConfig::builder()
+                .uri("/")
+                .directory("src/tests/files")
+                .auth(Auth::Basic(auth_config))
+                .build()?,
+        ));
+
+        let mut server = crate::Vetis::new(config);
+        server
+            .add_virtual_host(virtual_host)
+            .await;
+
+        server
+            .start()
+            .await?;
+
+        let client = deboa::Client::builder()
+            .certificate(Certificate::from_slice(CA_CERT, deboa::cert::ContentEncoding::DER))
+            .build();
+
+        let request = request::get(format!("https://localhost:{}/index.html", port))?;
+
+        let request = if let Some(username) = username {
+            if let Some(password) = password {
+                request.basic_auth(&username, &password)
+            } else {
+                request
+            }
+        } else {
+            request
+        };
+
+        let response = request
+            .send_with(&client)
+            .await;
+
+        if !has_auth {
+            assert_eq!(
+                response.err(),
+                Some(deboa::errors::DeboaError::Response(deboa::errors::ResponseError::Receive {
+                    status_code: StatusCode::UNAUTHORIZED,
+                    message: "Could not process request (401 Unauthorized): Unauthorized"
+                        .to_string()
+                }))
+            );
+        } else {
+            assert_eq!(response?.status(), StatusCode::OK);
+        }
+
+        server
+            .stop()
+            .await?;
+
+        Ok(())
+    }
+
+    #[cfg(all(feature = "auth", feature = "tokio-rt"))]
+    #[tokio::test]
+    async fn test_invalid_basic_auth() -> Result<(), Box<dyn Error>> {
+        do_basic_auth(None, None).await
+    }
+
+    #[cfg(all(feature = "auth", feature = "smol-rt"))]
+    #[apply(test!)]
+    async fn test_invalid_basic_auth() -> Result<(), Box<dyn Error>> {
+        do_basic_auth(None, None).await
+    }
+
+    #[cfg(all(feature = "auth", feature = "tokio-rt"))]
+    #[tokio::test]
+    async fn test_valid_basic_auth() -> Result<(), Box<dyn Error>> {
+        do_basic_auth(Some("rogerio".to_string()), Some("rpa78@rio!".to_string())).await
+    }
+
+    #[cfg(all(feature = "auth", feature = "smol-rt"))]
+    #[apply(test!)]
+    async fn test_valid_basic_auth() -> Result<(), Box<dyn Error>> {
+        do_basic_auth(Some("rogerio".to_string()), Some("rpa78@rio!".to_string())).await
     }
 }
 

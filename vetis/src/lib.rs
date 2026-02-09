@@ -142,7 +142,6 @@ compile_error!("Only one runtime feature can be enabled at a time.");
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::Bytes;
-use cfg_if::cfg_if;
 use futures_util::{stream, TryStreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Either, Full, StreamBody};
 use hyper::body::{Frame, Incoming};

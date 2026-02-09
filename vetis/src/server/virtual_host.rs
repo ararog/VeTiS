@@ -189,7 +189,7 @@ impl VirtualHost {
                     let result = File::open(file).await;
                     if let Ok(data) = result {
                         return Ok(Response::builder()
-                            .status(http::StatusCode::OK)
+                            .status(status_code)
                             .body(VetisBody::body_from_file(data)));
                     }
                 }

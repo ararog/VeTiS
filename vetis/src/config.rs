@@ -38,8 +38,8 @@
 //!     .build()?;
 //! ```
 
+use std::collections::HashMap;
 use std::fs;
-use std::{collections::HashMap, error::Error};
 
 use serde::Deserialize;
 
@@ -827,9 +827,9 @@ pub struct StaticPathConfig {
 impl StaticPathConfig {
     pub fn builder() -> StaticPathConfigBuilder {
         StaticPathConfigBuilder {
-            uri: "/test".to_string(),
+            uri: "/".to_string(),
             extensions: ".html".to_string(),
-            directory: "./test".to_string(),
+            directory: ".".to_string(),
             index_files: None,
             #[cfg(feature = "auth")]
             auth: None,
@@ -1184,6 +1184,7 @@ impl SecurityConfig {
 #[cfg(feature = "auth")]
 pub mod auth {
     use argon2::{PasswordHash, PasswordVerifier};
+    use base64::Engine;
     use http::HeaderMap;
     use log::error;
     use serde::Deserialize;
@@ -1209,11 +1210,41 @@ pub mod auth {
         fn authenticate(&self, headers: &HeaderMap) -> Result<bool, VetisError>;
     }
 
-    #[derive(Clone, Deserialize)]
+    #[derive(Clone, Debug, Deserialize, PartialEq)]
     pub enum Algorithm {
-        MD5,
         BCrypt,
         Argon2,
+    }
+
+    pub struct BasicAuthConfigBuilder {
+        users: HashMap<String, String>,
+        algorithm: Algorithm,
+        htpasswd: String,
+    }
+
+    impl BasicAuthConfigBuilder {
+        pub fn users(mut self, users: HashMap<String, String>) -> Self {
+            self.users = users;
+            self
+        }
+
+        pub fn algorithm(mut self, algorithm: Algorithm) -> Self {
+            self.algorithm = algorithm;
+            self
+        }
+
+        pub fn htpasswd(mut self, htpasswd: String) -> Self {
+            self.htpasswd = htpasswd;
+            self
+        }
+
+        pub fn build(self) -> BasicAuthConfig {
+            BasicAuthConfig {
+                users: self.users,
+                algorithm: self.algorithm,
+                htpasswd: self.htpasswd,
+            }
+        }
     }
 
     #[derive(Clone, Deserialize)]
@@ -1224,6 +1255,22 @@ pub mod auth {
     }
 
     impl BasicAuthConfig {
+        pub fn builder() -> BasicAuthConfigBuilder {
+            BasicAuthConfigBuilder {
+                users: HashMap::new(),
+                algorithm: Algorithm::BCrypt,
+                htpasswd: String::new(),
+            }
+        }
+
+        pub fn algorithm(&self) -> &Algorithm {
+            &self.algorithm
+        }
+
+        pub fn htpasswd(&self) -> &str {
+            &self.htpasswd
+        }
+
         pub fn cache_users(&mut self) {
             let htpasswd = fs::read_to_string(&self.htpasswd);
             match htpasswd {
@@ -1258,12 +1305,30 @@ pub mod auth {
                     VetisError::VirtualHost(VirtualHostError::Auth(
                         "Invalid Authorization header".to_string(),
                     ))
-                })?;
+                })?
+                .strip_prefix("Basic ")
+                .ok_or(VetisError::VirtualHost(VirtualHostError::Auth(
+                    "Expected basic authentication".to_string(),
+                )))?;
+
+            let auth_header = base64::engine::general_purpose::STANDARD.decode(auth_header);
+            let auth_header = auth_header.map_err(|e| {
+                VetisError::VirtualHost(VirtualHostError::Auth(format!(
+                    "Could not decode header: {}",
+                    e
+                )))
+            })?;
+
+            let auth_header = String::from_utf8(auth_header).map_err(|_| {
+                VetisError::VirtualHost(VirtualHostError::Auth(
+                    "Invalid Authorization header".to_string(),
+                ))
+            })?;
 
             let (username, password) = auth_header
                 .split_once(':')
                 .ok_or(VetisError::VirtualHost(VirtualHostError::Auth(
-                    "Invalid Authorization header".to_string(),
+                    "Invalid credentials".to_string(),
                 )))?;
 
             if let Some(hashed_password) = self
@@ -1279,7 +1344,6 @@ pub mod auth {
 
     fn verify_password(password: &str, hashed_password: &str, algorithm: &Algorithm) -> bool {
         match algorithm {
-            Algorithm::MD5 => md5::compute(password) == md5::compute(hashed_password),
             Algorithm::BCrypt => bcrypt::verify(password, hashed_password).unwrap_or(false),
             Algorithm::Argon2 => {
                 let argon2 = argon2::Argon2::default();

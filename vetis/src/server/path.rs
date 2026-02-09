@@ -350,19 +350,34 @@ impl Path for StaticPath {
                 .strip_prefix("/")
                 .unwrap_or(&uri);
             let file = directory.join(uri);
-            if file.is_file() && !file.exists() {
-                // check file by mimetype
-                if let Ok(ext_regex) = ext_regex {
-                    if !ext_regex.is_match(uri.as_ref()) {
-                        return self
-                            .serve_index_file(directory)
-                            .await;
+
+            if self
+                .config
+                .index_files()
+                .is_some()
+            {
+                // check if file exists
+                if !file.exists() {
+                    // check file by mimetype
+                    if let Ok(ext_regex) = ext_regex {
+                        if !ext_regex.is_match(uri.as_ref()) {
+                            return self
+                                .serve_index_file(directory)
+                                .await;
+                        }
                     }
+                } else if file.is_dir() {
+                    return self
+                        .serve_index_file(file)
+                        .await;
                 }
-            } else if file.is_dir() {
-                return self
-                    .serve_index_file(file)
-                    .await;
+            } else {
+                // no index files configured, just check if file exists
+                if !file.exists() {
+                    return Err(VetisError::VirtualHost(VirtualHostError::File(
+                        FileError::NotFound,
+                    )));
+                }
             }
 
             if request.method() == http::Method::HEAD {
