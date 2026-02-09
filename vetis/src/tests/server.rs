@@ -27,24 +27,24 @@ mod server_tests {
             .port(8080)
             .protocol(protocol.clone())
             .interface("0.0.0.0")
-            .build();
+            .build()?;
 
         let ipv6 = ListenerConfig::builder()
             .port(8081)
             .protocol(protocol.clone())
             .interface("::")
-            .build();
+            .build()?;
 
         let config = ServerConfig::builder()
             .add_listener(ipv4)
             .add_listener(ipv6)
-            .build();
+            .build()?;
 
         let security_config = SecurityConfig::builder()
             .ca_cert_from_bytes(CA_CERT.to_vec())
             .cert_from_bytes(SERVER_CERT.to_vec())
             .key_from_bytes(SERVER_KEY.to_vec())
-            .build();
+            .build()?;
 
         let localhost_config = VirtualHostConfig::builder()
             .hostname("localhost")
@@ -56,7 +56,7 @@ mod server_tests {
             .ca_cert_from_bytes(CA_CERT.to_vec())
             .cert_from_bytes(IP6_SERVER_CERT.to_vec())
             .key_from_bytes(IP6_SERVER_KEY.to_vec())
-            .build();
+            .build()?;
 
         let ip6_localhost_config = VirtualHostConfig::builder()
             .hostname("ip6-localhost")
@@ -75,8 +75,7 @@ mod server_tests {
                     .text("Hello from ipv4");
                 Ok(response)
             }))
-            .build()
-            .unwrap();
+            .build()?;
 
         let ip6_root_path = HandlerPath::builder()
             .uri("/hello")
@@ -86,8 +85,7 @@ mod server_tests {
                     .text("Hello from ipv6");
                 Ok(response)
             }))
-            .build()
-            .unwrap();
+            .build()?;
 
         localhost_virtual_host.add_path(ip4_root_path);
         ip6_localhost_virtual_host.add_path(ip6_root_path);

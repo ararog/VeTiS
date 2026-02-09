@@ -25,6 +25,9 @@ use http::{HeaderMap, HeaderValue};
 #[cfg(feature = "static-files")]
 use std::path::PathBuf;
 
+#[cfg(all(feature = "static-files", feature = "auth"))]
+use crate::config::auth::AuthConfig;
+
 use std::sync::Arc;
 
 use crate::{
@@ -330,6 +333,18 @@ impl Path for StaticPath {
                 self.config
                     .directory(),
             );
+
+            #[cfg(feature = "auth")]
+            if let Some(auth) = self.config.auth() {
+                if !auth
+                    .authenticate(request.headers())
+                    .unwrap_or(false)
+                {
+                    return Err(VetisError::VirtualHost(VirtualHostError::Auth(
+                        "Unauthorized".to_string(),
+                    )));
+                }
+            }
 
             let uri = uri
                 .strip_prefix("/")

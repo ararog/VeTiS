@@ -71,11 +71,11 @@ async fn run() -> Result<(), Box<dyn Error>> {
     } else {
         let listener = ListenerConfig::builder()
             .port(8080)
-            .build();
+            .build()?;
 
         let server_config = ServerConfig::builder()
             .add_listener(listener)
-            .build();
+            .build()?;
 
         let mut server = Vetis::new(server_config);
 

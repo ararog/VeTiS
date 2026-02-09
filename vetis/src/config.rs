@@ -38,10 +38,13 @@
 //!     .build()?;
 //! ```
 
-use std::collections::HashMap;
 use std::fs;
+use std::{collections::HashMap, error::Error};
 
 use serde::Deserialize;
+
+#[cfg(feature = "auth")]
+use crate::config::auth::Auth;
 
 use crate::{
     default_protocol,
@@ -175,13 +178,24 @@ impl ListenerConfigBuilder {
     }
 
     /// Creates the `ListenerConfig` with the configured settings.
-    pub fn build(self) -> ListenerConfig {
-        ListenerConfig {
+    pub fn build(self) -> Result<ListenerConfig, ConfigError> {
+        if self.port == 0 {
+            return Err(ConfigError::Listener("Port cannot be 0".to_string()));
+        }
+
+        if self
+            .interface
+            .is_empty()
+        {
+            return Err(ConfigError::Listener("Interface cannot be empty".to_string()));
+        }
+
+        Ok(ListenerConfig {
             port: self.port,
             ssl: self.ssl,
             protocol: self.protocol,
             interface: self.interface,
-        }
+        })
     }
 }
 
@@ -312,8 +326,15 @@ impl ServerConfigBuilder {
     }
 
     /// Creates the `ServerConfig` with the configured listeners.
-    pub fn build(self) -> ServerConfig {
-        ServerConfig { listeners: self.listeners }
+    pub fn build(self) -> Result<ServerConfig, ConfigError> {
+        if self
+            .listeners
+            .is_empty()
+        {
+            return Err(ConfigError::Server("No listeners configured".to_string()));
+        }
+
+        Ok(ServerConfig { listeners: self.listeners })
     }
 }
 
@@ -727,6 +748,8 @@ pub struct StaticPathConfigBuilder {
     extensions: String,
     directory: String,
     index_files: Option<Vec<String>>,
+    #[cfg(feature = "auth")]
+    auth: Option<Auth>,
 }
 
 #[cfg(feature = "static-files")]
@@ -748,6 +771,12 @@ impl StaticPathConfigBuilder {
 
     pub fn index_files(mut self, index_files: Vec<String>) -> Self {
         self.index_files = Some(index_files);
+        self
+    }
+
+    #[cfg(feature = "auth")]
+    pub fn auth(mut self, auth: Auth) -> Self {
+        self.auth = Some(auth);
         self
     }
 
@@ -777,6 +806,8 @@ impl StaticPathConfigBuilder {
             extensions: self.extensions,
             directory: self.directory,
             index_files: self.index_files,
+            #[cfg(feature = "auth")]
+            auth: self.auth,
         })
     }
 }
@@ -788,7 +819,8 @@ pub struct StaticPathConfig {
     extensions: String,
     directory: String,
     index_files: Option<Vec<String>>,
-    // TODO: Add basicauth config
+    #[cfg(feature = "auth")]
+    auth: Option<Auth>,
 }
 
 #[cfg(feature = "static-files")]
@@ -799,6 +831,8 @@ impl StaticPathConfig {
             extensions: ".html".to_string(),
             directory: "./test".to_string(),
             index_files: None,
+            #[cfg(feature = "auth")]
+            auth: None,
         }
     }
 
@@ -816,6 +850,11 @@ impl StaticPathConfig {
 
     pub fn index_files(&self) -> &Option<Vec<String>> {
         &self.index_files
+    }
+
+    #[cfg(feature = "auth")]
+    pub fn auth(&self) -> &Option<Auth> {
+        &self.auth
     }
 }
 
@@ -1048,13 +1087,23 @@ impl SecurityConfigBuilder {
     }
 
     /// Creates the `SecurityConfig` with the configured settings.
-    pub fn build(self) -> SecurityConfig {
-        SecurityConfig {
+    pub fn build(self) -> Result<SecurityConfig, VetisError> {
+        if self.cert.is_empty() {
+            return Err(VetisError::Config(ConfigError::Security(
+                "Certificate is empty".to_string(),
+            )));
+        }
+
+        if self.key.is_empty() {
+            return Err(VetisError::Config(ConfigError::Security("Key is empty".to_string())));
+        }
+
+        Ok(SecurityConfig {
             cert: self.cert,
             key: self.key,
             ca_cert: self.ca_cert,
             client_auth: self.client_auth,
-        }
+        })
     }
 }
 
@@ -1129,5 +1178,115 @@ impl SecurityConfig {
     /// Returns whether client authentication is enabled.
     pub fn client_auth(&self) -> bool {
         self.client_auth
+    }
+}
+
+#[cfg(feature = "auth")]
+pub mod auth {
+    use argon2::{PasswordHash, PasswordVerifier};
+    use http::HeaderMap;
+    use log::error;
+    use serde::Deserialize;
+    use std::collections::HashMap;
+    use std::fs;
+
+    use crate::errors::{VetisError, VirtualHostError};
+
+    #[derive(Clone, Deserialize)]
+    pub enum Auth {
+        Basic(BasicAuthConfig),
+    }
+
+    impl AuthConfig for Auth {
+        fn authenticate(&self, headers: &HeaderMap) -> Result<bool, VetisError> {
+            match self {
+                Auth::Basic(config) => config.authenticate(headers),
+            }
+        }
+    }
+
+    pub trait AuthConfig {
+        fn authenticate(&self, headers: &HeaderMap) -> Result<bool, VetisError>;
+    }
+
+    #[derive(Clone, Deserialize)]
+    pub enum Algorithm {
+        MD5,
+        BCrypt,
+        Argon2,
+    }
+
+    #[derive(Clone, Deserialize)]
+    pub struct BasicAuthConfig {
+        users: HashMap<String, String>,
+        algorithm: Algorithm,
+        htpasswd: String,
+    }
+
+    impl BasicAuthConfig {
+        pub fn cache_users(&mut self) {
+            let htpasswd = fs::read_to_string(&self.htpasswd);
+            match htpasswd {
+                Ok(file) => {
+                    file.lines()
+                        .for_each(|line| {
+                            let (username, password) = line
+                                .split_once(':')
+                                .unwrap();
+                            self.users
+                                .insert(username.to_string(), password.to_string());
+                        });
+                }
+                Err(e) => {
+                    error!("Failed to read htpasswd file: {}", e);
+                }
+            }
+        }
+    }
+
+    impl AuthConfig for BasicAuthConfig {
+        fn authenticate(&self, headers: &HeaderMap) -> Result<bool, VetisError> {
+            let auth_header = headers
+                .get(http::header::AUTHORIZATION)
+                .ok_or(VetisError::VirtualHost(VirtualHostError::Auth(
+                    "Missing Authorization header".to_string(),
+                )))?;
+
+            let auth_header = auth_header
+                .to_str()
+                .map_err(|_| {
+                    VetisError::VirtualHost(VirtualHostError::Auth(
+                        "Invalid Authorization header".to_string(),
+                    ))
+                })?;
+
+            let (username, password) = auth_header
+                .split_once(':')
+                .ok_or(VetisError::VirtualHost(VirtualHostError::Auth(
+                    "Invalid Authorization header".to_string(),
+                )))?;
+
+            if let Some(hashed_password) = self
+                .users
+                .get(username)
+            {
+                return Ok(verify_password(password, hashed_password, &self.algorithm));
+            }
+
+            Ok(false)
+        }
+    }
+
+    fn verify_password(password: &str, hashed_password: &str, algorithm: &Algorithm) -> bool {
+        match algorithm {
+            Algorithm::MD5 => md5::compute(password) == md5::compute(hashed_password),
+            Algorithm::BCrypt => bcrypt::verify(password, hashed_password).unwrap_or(false),
+            Algorithm::Argon2 => {
+                let argon2 = argon2::Argon2::default();
+                let parsed_hash = PasswordHash::new(hashed_password).unwrap();
+                let result = argon2.verify_password(password.as_bytes(), &parsed_hash);
+                result.is_ok()
+            }
+        }
     }
 }

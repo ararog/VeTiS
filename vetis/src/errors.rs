@@ -95,11 +95,21 @@ pub enum VetisError {
 /// ```
 #[derive(Debug, Clone, Error, PartialEq)]
 pub enum ConfigError {
+    /// No listeners configured
+    #[error("Invalid server config: {0}")]
+    Server(String),
+    /// Invalid listener configuration
+    #[error("Invalid listener config: {0}")]
+    Listener(String),
     /// Invalid virtual host configuration
     #[error("Invalid virtual host config: {0}")]
     VirtualHost(String),
+    /// Invalid path configuration
     #[error("Invalid path config: {0}")]
     Path(String),
+    /// Invalid security configuration
+    #[error("Invalid security config: {0}")]
+    Security(String),
 }
 
 /// Server startup errors.
@@ -157,6 +167,9 @@ pub enum VirtualHostError {
     /// Proxy errors
     #[error("Proxy error: {0}")]
     Proxy(String),
+
+    #[error("Auth error: {0}")]
+    Auth(String),
 }
 
 #[derive(Debug, Clone, Error, PartialEq)]

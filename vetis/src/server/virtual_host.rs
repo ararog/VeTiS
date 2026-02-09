@@ -249,6 +249,12 @@ impl VirtualHost {
                                 .serve_status_page(http::StatusCode::BAD_GATEWAY.as_u16())
                                 .await;
                         }
+                        VetisError::VirtualHost(VirtualHostError::Auth(e)) => {
+                            log::error!("Auth error: {}", e);
+                            return self
+                                .serve_status_page(http::StatusCode::UNAUTHORIZED.as_u16())
+                                .await;
+                        }
                         _ => {}
                     }
 

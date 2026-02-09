@@ -1,10 +1,12 @@
+use std::error::Error;
+
 use crate::{
     config::{ListenerConfig, Protocol, SecurityConfig, ServerConfig, VirtualHostConfig},
     errors::{ConfigError, VetisError},
 };
 
 #[test]
-fn test_listener_config() {
+fn test_listener_config() -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "http1")]
     let protocol = Protocol::Http1;
     #[cfg(feature = "http2")]
@@ -17,46 +19,48 @@ fn test_listener_config() {
         .ssl(false)
         .protocol(protocol.clone())
         .interface("127.0.0.1")
-        .build();
+        .build()?;
     assert_eq!(listener_config.port(), 8080);
     assert!(!listener_config.ssl());
     assert_eq!(listener_config.protocol(), &protocol);
     assert_eq!(listener_config.interface(), "127.0.0.1");
+
+    Ok(())
 }
 
 #[test]
-fn test_server_config() {
+fn test_server_config() -> Result<(), Box<dyn Error>> {
     let server_config = ServerConfig::builder()
         .add_listener(
             ListenerConfig::builder()
                 .port(8080)
-                .build(),
+                .build()?,
         )
-        .build();
+        .build()?;
     assert_eq!(
         server_config
             .listeners()
             .len(),
         1
     );
+
+    Ok(())
 }
 
 #[test]
-fn test_security_config() {
+fn test_security_config() -> Result<(), Box<dyn Error>> {
     let security_config = SecurityConfig::builder()
         .ca_cert_from_bytes(vec![])
         .cert_from_bytes(vec![])
         .key_from_bytes(vec![])
         .build();
-    assert!(security_config
-        .ca_cert()
-        .is_some());
-    assert!(security_config
-        .cert()
-        .is_empty());
-    assert!(security_config
-        .key()
-        .is_empty());
+
+    assert_eq!(
+        security_config.err(),
+        Some(VetisError::Config(ConfigError::Security("Certificate is empty".to_string())))
+    );
+
+    Ok(())
 }
 
 #[test]

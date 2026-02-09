@@ -7,7 +7,7 @@ use std::{
 use http::header;
 use hyper::{body::Incoming, service::service_fn};
 
-use log::{error, info};
+use log::{debug, error, info};
 
 use rt_gate::{spawn_server, spawn_worker, GateTask};
 
@@ -266,7 +266,7 @@ async fn process_request(
     req: http::Request<Incoming>,
     virtual_hosts: VetisVirtualHosts,
     port: Arc<u16>,
-    _client_addr: SocketAddr,
+    client_addr: SocketAddr,
 ) -> Result<http::Response<VetisBody>, VetisError> {
     let host = req
         .headers()
@@ -294,7 +294,7 @@ async fn process_request(
     };
 
     if let Some(host) = host {
-        info!("Serving request for host: {}", host);
+        debug!("Serving request for host: {}", host);
         let virtual_hosts = virtual_hosts
             .read()
             .await;
@@ -304,6 +304,14 @@ async fn process_request(
         if let Some(virtual_host) = virtual_host {
             // TODO: Save client_addr in request, grab url from request for logging
             let request = crate::Request::from_http(req);
+
+            let method = request
+                .method()
+                .clone();
+
+            let uri = request
+                .uri()
+                .clone();
 
             let vetis_response = virtual_host
                 .route(request)
@@ -336,7 +344,9 @@ async fn process_request(
                 }
             }
 
-            // TODO: Log request and its response status code
+            // TODO: Log request and its response status code (move it to oneshot channel?)
+            info!("{} {} {} {}", client_addr, method, uri, response.status());
+
             Ok::<http::Response<VetisBody>, VetisError>(response)
         } else {
             error!("Virtual host not found: {}", host);

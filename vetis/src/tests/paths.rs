@@ -22,17 +22,17 @@ mod handler {
             .port(8082)
             .protocol(default_protocol())
             .interface("0.0.0.0")
-            .build();
+            .build()?;
 
         let config = ServerConfig::builder()
             .add_listener(ipv4)
-            .build();
+            .build()?;
 
         let security_config = SecurityConfig::builder()
             .ca_cert_from_bytes(CA_CERT.to_vec())
             .cert_from_bytes(SERVER_CERT.to_vec())
             .key_from_bytes(SERVER_KEY.to_vec())
-            .build();
+            .build()?;
 
         let localhost_config = VirtualHostConfig::builder()
             .hostname("localhost")
@@ -50,8 +50,7 @@ mod handler {
                     .text("Hello from localhost");
                 Ok(response)
             }))
-            .build()
-            .unwrap();
+            .build()?;
 
         localhost_virtual_host.add_path(root_path);
 
@@ -236,31 +235,30 @@ mod reverse_proxy {
             .port(8084)
             .protocol(default_protocol())
             .interface("0.0.0.0")
-            .build();
+            .build()?;
 
         let target_listener = ListenerConfig::builder()
             .port(8085)
             .protocol(default_protocol())
             .interface("0.0.0.0")
-            .build();
+            .build()?;
 
         let config = ServerConfig::builder()
             .add_listener(source_listener)
             .add_listener(target_listener)
-            .build();
+            .build()?;
 
         let security_config = SecurityConfig::builder()
             .ca_cert_from_bytes(CA_CERT.to_vec())
             .cert_from_bytes(SERVER_CERT.to_vec())
             .key_from_bytes(SERVER_KEY.to_vec())
-            .build();
+            .build()?;
 
         let source_config = VirtualHostConfig::builder()
             .hostname("localhost")
             .port(8084)
             .security(security_config.clone())
-            .build()
-            .unwrap();
+            .build()?;
 
         let mut source_virtual_host = VirtualHost::new(source_config);
         source_virtual_host.add_path(ProxyPath::new(
@@ -273,8 +271,7 @@ mod reverse_proxy {
         let target_config = VirtualHostConfig::builder()
             .hostname("localhost")
             .port(8085)
-            .build()
-            .unwrap();
+            .build()?;
 
         let mut target_virtual_host = VirtualHost::new(target_config);
         target_virtual_host.add_path(

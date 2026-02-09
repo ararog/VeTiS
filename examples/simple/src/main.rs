@@ -44,17 +44,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .port(8443)
         .protocol(Protocol::Http1)
         .interface("::")
-        .build();
+        .build()?;
 
     let config = ServerConfig::builder()
         .add_listener(https)
-        .build();
+        .build()?;
 
     let security_config = SecurityConfig::builder()
         .ca_cert_from_bytes(CA_CERT.to_vec())
         .cert_from_bytes(IP6_SERVER_CERT.to_vec())
         .key_from_bytes(IP6_SERVER_KEY.to_vec())
-        .build();
+        .build()?;
 
     let localhost_config = VirtualHostConfig::builder()
         .hostname("ip6-localhost")
@@ -76,8 +76,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .text("Hello from localhost");
             Ok(response)
         }))
-        .build()
-        .unwrap();
+        .build()?;
 
     localhost_virtual_host.add_path(root_path);
 
@@ -89,8 +88,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .text("Health check");
             Ok(response)
         }))
-        .build()
-        .unwrap();
+        .build()?;
 
     localhost_virtual_host.add_path(health_path);
 

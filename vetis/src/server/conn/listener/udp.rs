@@ -14,7 +14,7 @@ use h3_quinn::{
 use http::header;
 use http_body_util::{BodyExt, Full};
 
-use log::{error, info};
+use log::{debug, error, info};
 use rt_gate::{spawn_server, spawn_worker, GateTask};
 
 use crate::{
@@ -184,6 +184,10 @@ fn handle_http_request(
         if let Ok((req, mut stream)) = result {
             let (parts, _) = req.into_parts();
 
+            let method = parts.method.clone();
+
+            let uri = parts.uri.clone();
+
             /*
             let body = if parts.method == http::Method::POST
                 || parts.method == http::Method::PUT
@@ -214,7 +218,7 @@ fn handle_http_request(
 
             let virtual_hosts = virtual_hosts.clone();
             let response = if let Some(host) = host {
-                info!("Serving request for host: {}", host);
+                debug!("Serving request for host: {}", host);
                 let virtual_host = virtual_hosts
                     .read()
                     .await;
@@ -271,6 +275,9 @@ fn handle_http_request(
                         response
                     };
 
+                    // TODO: Log request and its response status code (move it to oneshot channel?)
+                    info!("{} {} {} {}", client_addr, method, uri, response.status());
+
                     Ok::<_, VetisError>(response)
                 } else {
                     error!("Virtual host not found: {}", host);
@@ -311,7 +318,7 @@ fn handle_http_request(
                     .await
                 {
                     Ok(_) => {
-                        info!("Successfully respond to connection");
+                        debug!("Successfully respond to connection");
                     }
                     Err(err) => {
                         error!("Unable to send response to connection peer: {:?}", err);
