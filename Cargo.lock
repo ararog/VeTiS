@@ -2783,7 +2783,7 @@ dependencies = [
  "maplit",
  "smol-macros",
  "tokio",
- "vetis 0.1.4-beta.3",
+ "vetis 0.1.4-beta.4",
 ]
 
 [[package]]
@@ -3449,7 +3449,7 @@ dependencies = [
 
 [[package]]
 name = "vetis"
-version = "0.1.4-beta.3"
+version = "0.1.4-beta.4"
 dependencies = [
  "argon2",
  "async-signal",
